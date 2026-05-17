@@ -14,7 +14,7 @@ class LabAllocator {
    */
   allocate(session, day, slots) {
     const { subject, division, batch } = session;
-    const facRequired = 2;
+    let facRequired = 2;
 
     // 1. Find suitable lab rooms
     const suitableLabs = this.generator.labs.filter(l => 
@@ -23,23 +23,31 @@ class LabAllocator {
     );
 
     // 2. Find suitable faculty (need 2)
-    const suitableFaculty = this.generator.teachers.filter(t => 
-      t.subjectsHandled.includes(subject.subjectName)
-    );
+    let suitableFaculty = [];
+    const mappedFacs = this.generator.facultyMapping[subject._id.toString()];
+    if (mappedFacs) {
+      const ids = mappedFacs.lab || (Array.isArray(mappedFacs) ? mappedFacs : [mappedFacs]);
+      suitableFaculty = this.generator.teachers.filter(t => ids.includes(t._id.toString()));
+    } else {
+      suitableFaculty = this.generator.teachers.filter(t => 
+        t.subjectsHandled.includes(subject.subjectName)
+      );
+    }
 
-    if (suitableFaculty.length < facRequired) return null;
+    facRequired = Math.min(2, suitableFaculty.length);
+    if (facRequired === 0) return null;
 
     // 3. Try combinations
     for (const lab of suitableLabs) {
-      // Find 2 available faculty for ALL slots in the duration
-      const availableFacPairs = this.findFacultyPairs(suitableFaculty, day, slots);
+      // Find available faculty for ALL slots in the duration
+      const availableFacGroups = this.findFacultyGroups(suitableFaculty, day, slots, facRequired);
       
-      for (const facPair of availableFacPairs) {
+      for (const facGroup of availableFacGroups) {
         // Check if Lab Room is free
         if (this.isRoomFree(lab, day, slots)) {
           return {
             lab,
-            faculty: facPair,
+            faculty: facGroup,
             day,
             slots
           };
@@ -47,11 +55,12 @@ class LabAllocator {
       }
     }
 
+    console.log(`[LabAllocator] allocate failed for ${subject.subjectName} | labs: ${suitableLabs.length} | facs: ${suitableFaculty.length}`);
     return null;
   }
 
-  findFacultyPairs(facultyPool, day, slots) {
-    const pairs = [];
+  findFacultyGroups(facultyPool, day, slots, facRequired) {
+    const groups = [];
     const available = facultyPool.filter(f => {
       return slots.every(slot => {
         const key = `${day}-${slot}`;
@@ -66,15 +75,20 @@ class LabAllocator {
       });
     });
 
-    // Create pairs (Simple combination)
-    for (let i = 0; i < available.length; i++) {
-      for (let j = i + 1; j < available.length; j++) {
-        pairs.push([available[i], available[j]]);
+    if (available.length < facRequired) return [];
+
+    if (facRequired === 1) {
+      available.forEach(f => groups.push([f]));
+    } else if (facRequired === 2) {
+      for (let i = 0; i < available.length; i++) {
+        for (let j = i + 1; j < available.length; j++) {
+          groups.push([available[i], available[j]]);
+        }
       }
     }
     
-    // Heuristic: Shuffle pairs to distribute workload
-    return pairs.sort(() => Math.random() - 0.5);
+    // Heuristic: Shuffle groups to distribute workload
+    return groups.sort(() => Math.random() - 0.5);
   }
 
   isRoomFree(room, day, slots) {

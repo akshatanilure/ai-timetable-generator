@@ -5,7 +5,12 @@ const Subject = require('../models/Subject');
 // @access  Private
 exports.getSubjects = async (req, res) => {
   try {
-    const subjects = await Subject.find();
+    const { semester, branch } = req.query;
+    const filter = {};
+    if (semester) filter.semester = semester;
+    if (branch) filter.branch = branch;
+
+    const subjects = await Subject.find(filter);
     res.status(200).json({
       success: true,
       count: subjects.length,

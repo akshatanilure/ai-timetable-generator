@@ -1,25 +1,32 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import api from '../services/api';
 import TimetableGrid from '../components/TimetableGrid';
-import { FiUser, FiActivity, FiClock, FiPieChart, FiSearch } from 'react-icons/fi';
+import { useAuth } from '../context/AuthContext';
+import { FiUser, FiActivity, FiClock, FiPieChart, FiSearch, FiBookOpen, FiUserCheck } from 'react-icons/fi';
 
 const TeacherDashboard = () => {
+  const { user } = useAuth();
+  const isTeacher = user?.role === 'teacher';
+  const isAdmin = user?.role === 'admin';
+  
   const [teachers, setTeachers] = useState([]);
-  const [selectedTeacherId, setSelectedTeacherId] = useState('');
+  const [selectedTeacherId, setSelectedTeacherId] = useState(isTeacher ? user._id : '');
   const [timetables, setTimetables] = useState([]);
   const [selectedTimetableId, setSelectedTimetableId] = useState('');
   const [workloadData, setWorkloadData] = useState(null);
   const [teacherSchedule, setTeacherSchedule] = useState([]);
+  const [assignedSubjects, setAssignedSubjects] = useState([]);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const [teachersRes, timetablesRes] = await Promise.all([
-          api.get('/teachers'),
-          api.get('/timetables')
-        ]);
-        setTeachers(teachersRes.data.data);
+        if (isAdmin) {
+          const teachersRes = await api.get('/teachers');
+          setTeachers(teachersRes.data.data);
+        }
+        
+        const timetablesRes = await api.get('/timetables');
         setTimetables(timetablesRes.data.data);
         
         if (timetablesRes.data.data.length > 0) {
@@ -30,22 +37,16 @@ const TeacherDashboard = () => {
       }
     };
     fetchData();
-  }, []);
-
-  useEffect(() => {
-    if (selectedTeacherId && selectedTimetableId) {
-      fetchTeacherMetrics();
-    }
-  }, [selectedTeacherId, selectedTimetableId, fetchTeacherMetrics]);
+  }, [isAdmin]);
 
   const fetchTeacherMetrics = useCallback(async () => {
+    if (!selectedTeacherId || !selectedTimetableId) return;
+    
     setLoading(true);
     try {
-      // 1. Get full timetable to extract schedule
       const ttRes = await api.get(`/timetables/${selectedTimetableId}`);
       const fullSchedule = ttRes.data.data.generatedSchedule;
       
-      // Filter sessions for this teacher
       const filtered = fullSchedule.filter(s => {
         if (Array.isArray(s.faculty)) {
           return s.faculty.some(f => f._id === selectedTeacherId || f === selectedTeacherId);
@@ -54,7 +55,9 @@ const TeacherDashboard = () => {
       });
       setTeacherSchedule(filtered);
 
-      // 2. Get workload analytics
+      const subjects = [...new Set(filtered.map(s => s.subject?.subjectName))].filter(Boolean);
+      setAssignedSubjects(subjects);
+
       const workloadRes = await api.get(`/timetables/${selectedTimetableId}/workload`);
       setWorkloadData(workloadRes.data.data[selectedTeacherId]);
     } catch (err) {
@@ -64,30 +67,43 @@ const TeacherDashboard = () => {
     }
   }, [selectedTeacherId, selectedTimetableId]);
 
+  useEffect(() => {
+    fetchTeacherMetrics();
+  }, [selectedTeacherId, selectedTimetableId, fetchTeacherMetrics]);
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <h1 className="text-2xl font-bold text-gray-800">Faculty Insight</h1>
+        <div>
+          <h1 className="text-2xl font-bold text-gray-800 flex items-center">
+            {isTeacher ? <FiUserCheck className="mr-2 text-primary" /> : <FiUser className="mr-2 text-primary" />}
+            {isTeacher ? 'My Schedule & Workload' : 'Faculty Insight'}
+          </h1>
+          {isTeacher && <p className="text-sm text-gray-500 mt-1">Hello, Prof. {user.name}. Here is your weekly academic summary.</p>}
+        </div>
         
         <div className="flex flex-col sm:flex-row gap-2">
-          <div className="relative">
-            <FiSearch className="absolute left-3 top-3 text-gray-400" />
-            <select 
-              className="pl-10 pr-4 py-2 border border-gray-200 rounded-lg text-sm focus:ring-1 focus:ring-primary outline-none min-w-[200px]"
-              value={selectedTeacherId}
-              onChange={(e) => setSelectedTeacherId(e.target.value)}
-            >
-              <option value="">Select Teacher...</option>
-              {teachers.map(t => (
-                <option key={t._id} value={t._id}>{t.name}</option>
-              ))}
-            </select>
-          </div>
+          {isAdmin && (
+            <div className="relative">
+              <FiSearch className="absolute left-3 top-3 text-gray-400" />
+              <select 
+                className="pl-10 pr-4 py-2 border border-gray-200 rounded-lg text-sm focus:ring-1 focus:ring-primary outline-none min-w-[200px]"
+                value={selectedTeacherId}
+                onChange={(e) => setSelectedTeacherId(e.target.value)}
+              >
+                <option value="">Select Teacher...</option>
+                {teachers.map(t => (
+                  <option key={t._id} value={t._id}>{t.name}</option>
+                ))}
+              </select>
+            </div>
+          )}
           <select 
             className="px-4 py-2 border border-gray-200 rounded-lg text-sm focus:ring-1 focus:ring-primary outline-none"
             value={selectedTimetableId}
             onChange={(e) => setSelectedTimetableId(e.target.value)}
           >
+            <option value="">Select Timetable...</option>
             {timetables.map(t => (
               <option key={t._id} value={t._id}>Timetable: Sem {t.semester}</option>
             ))}
@@ -106,29 +122,28 @@ const TeacherDashboard = () => {
         </div>
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Analytics Cards */}
           <div className="lg:col-span-1 space-y-6">
             <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
               <h3 className="text-sm font-bold text-gray-400 uppercase mb-4 flex items-center">
-                <FiPieChart className="mr-2" /> Workload Summary
+                <FiPieChart className="mr-2" /> Weekly Workload
               </h3>
               <div className="space-y-4">
                 <div className="flex justify-between items-end">
-                  <span className="text-sm text-gray-500">Weekly Hours</span>
-                  <span className="text-2xl font-bold text-primary">{workloadData?.summary?.totalWeeklyHours || 0}h</span>
+                  <span className="text-sm text-gray-500 font-medium">Total Commited Hours</span>
+                  <span className="text-2xl font-black text-primary tracking-tighter">{workloadData?.summary?.totalWeeklyHours || 0}h</span>
                 </div>
-                <div className="w-full bg-gray-100 rounded-full h-2">
-                  <div className="bg-primary h-2 rounded-full" style={{ width: `${(workloadData?.summary?.totalWeeklyHours / 40) * 100}%` }}></div>
+                <div className="w-full bg-gray-100 rounded-full h-3">
+                  <div className="bg-indigo-600 h-3 rounded-full shadow-inner" style={{ width: `${Math.min((workloadData?.summary?.totalWeeklyHours / 40) * 100, 100)}%` }}></div>
                 </div>
                 
                 <div className="grid grid-cols-2 gap-4 pt-4 border-t border-gray-50">
                   <div>
-                    <p className="text-[10px] text-gray-400 uppercase font-bold">Theory</p>
-                    <p className="text-lg font-bold text-blue-600">{workloadData?.summary?.lectureHours || 0}h</p>
+                    <p className="text-[10px] text-gray-400 uppercase font-bold tracking-widest">Theory</p>
+                    <p className="text-xl font-black text-blue-600">{workloadData?.summary?.lectureHours || 0}h</p>
                   </div>
                   <div>
-                    <p className="text-[10px] text-gray-400 uppercase font-bold">Labs</p>
-                    <p className="text-lg font-bold text-orange-600">{workloadData?.summary?.labHours || 0}h</p>
+                    <p className="text-[10px] text-gray-400 uppercase font-bold tracking-widest">Labs/Prac</p>
+                    <p className="text-xl font-black text-orange-600">{workloadData?.summary?.labHours || 0}h</p>
                   </div>
                 </div>
               </div>
@@ -136,28 +151,45 @@ const TeacherDashboard = () => {
 
             <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
               <h3 className="text-sm font-bold text-gray-400 uppercase mb-4 flex items-center">
-                <FiClock className="mr-2" /> Daily Distribution
+                <FiBookOpen className="mr-2" /> Assigned Courses
               </h3>
-              <div className="space-y-3">
+              <div className="flex flex-wrap gap-2">
+                {assignedSubjects.length > 0 ? assignedSubjects.map(sub => (
+                  <span key={sub} className="px-4 py-2 bg-indigo-50 text-indigo-700 text-xs font-black rounded-xl border border-indigo-100 shadow-sm">
+                    {sub}
+                  </span>
+                )) : <p className="text-gray-400 text-sm italic">No courses assigned to this faculty.</p>}
+              </div>
+            </div>
+
+            <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
+              <h3 className="text-sm font-bold text-gray-400 uppercase mb-4 flex items-center">
+                <FiClock className="mr-2" /> Day-wise Intensity
+              </h3>
+              <div className="space-y-4">
                 {Object.entries(workloadData?.dailyWorkload || {}).map(([day, hours]) => (
-                  <div key={day} className="flex items-center">
-                    <span className="text-xs text-gray-500 w-20">{day}</span>
-                    <div className="flex-1 bg-gray-100 h-1.5 rounded-full mx-2 overflow-hidden">
-                      <div className="bg-indigo-400 h-full" style={{ width: `${(hours / 8) * 100}%` }}></div>
+                  <div key={day} className="flex items-center group">
+                    <span className="text-xs font-bold text-gray-400 w-12 group-hover:text-gray-800 transition-colors uppercase">{day.slice(0,3)}</span>
+                    <div className="flex-1 bg-gray-100 h-2 rounded-full mx-3 overflow-hidden">
+                      <div className="bg-indigo-400 h-full group-hover:bg-indigo-600 transition-all" style={{ width: `${Math.min((hours / 8) * 100, 100)}%` }}></div>
                     </div>
-                    <span className="text-xs font-bold text-gray-700">{hours}h</span>
+                    <span className="text-xs font-black text-gray-700 w-8 text-right">{hours}h</span>
                   </div>
                 ))}
               </div>
             </div>
           </div>
 
-          {/* Teacher Timetable */}
           <div className="lg:col-span-2">
-            <div className="mb-4 flex items-center text-gray-700 font-bold">
-              <FiActivity className="mr-2" /> Personal Schedule
+            <div className="mb-4 flex items-center justify-between text-gray-700">
+              <div className="flex items-center font-bold">
+                <FiActivity className="mr-2 text-teal-500" /> Academic Calendar
+              </div>
+              <span className="text-[10px] uppercase font-bold tracking-tighter text-gray-400">Weekly View</span>
             </div>
-            <TimetableGrid schedule={teacherSchedule} />
+            <div className="bg-white rounded-3xl shadow-sm border border-gray-100 overflow-hidden">
+              <TimetableGrid schedule={teacherSchedule} />
+            </div>
           </div>
         </div>
       )}

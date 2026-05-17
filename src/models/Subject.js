@@ -21,6 +21,10 @@ const subjectSchema = new mongoose.Schema(
       type: String,
       required: [true, 'Please add a department'],
     },
+    branch: {
+      type: String,
+      default: 'CSE',
+    },
     lectureHours: {
       type: Number,
       default: 0,

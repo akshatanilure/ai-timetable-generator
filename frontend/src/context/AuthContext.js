@@ -5,6 +5,7 @@ const AuthContext = createContext();
 
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
+  const [role, setRole] = useState(localStorage.getItem('role') || null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -13,9 +14,14 @@ export const AuthProvider = ({ children }) => {
       if (token) {
         try {
           const userData = await authService.getCurrentUser();
-          setUser(userData.data);
+          const userObj = userData.data;
+          setUser(userObj);
+          setRole(userObj.role);
+          localStorage.setItem('role', userObj.role);
         } catch (err) {
           authService.logout();
+          setRole(null);
+          localStorage.removeItem('role');
         }
       }
       setLoading(false);
@@ -24,24 +30,30 @@ export const AuthProvider = ({ children }) => {
   }, []);
 
   const login = async (email, password) => {
-    const data = await authService.login(email, password);
-    setUser(data.data);
-    return data.data;
+    const userObj = await authService.login(email, password);
+    setUser(userObj);
+    setRole(userObj.role);
+    localStorage.setItem('role', userObj.role);
+    return userObj;
   };
 
   const register = async (userData) => {
-    const data = await authService.register(userData);
-    setUser(data.data);
-    return data.data;
+    const userObj = await authService.register(userData);
+    setUser(userObj);
+    setRole(userObj.role);
+    localStorage.setItem('role', userObj.role);
+    return userObj;
   };
 
   const logout = () => {
     authService.logout();
     setUser(null);
+    setRole(null);
+    localStorage.removeItem('role');
   };
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, register, logout }}>
+    <AuthContext.Provider value={{ user, role, loading, login, register, logout }}>
       {children}
     </AuthContext.Provider>
   );

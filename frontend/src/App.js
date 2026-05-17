@@ -6,7 +6,7 @@ import ProtectedRoute from './components/ProtectedRoute';
 import ErrorBoundary from './components/ErrorBoundary';
 import DashboardLayout from './layouts/DashboardLayout';
 
-// Pages
+import Home from './pages/Home';
 import Login from './pages/Login';
 import Register from './pages/Register';
 import Dashboard from './pages/Dashboard';
@@ -16,6 +16,7 @@ import Timetables from './pages/Timetables';
 import TeacherDashboard from './pages/TeacherDashboard';
 import StudentDashboard from './pages/StudentDashboard';
 import GenerateTimetable from './pages/GenerateTimetable';
+import Constraints from './pages/Constraints';
 
 // Placeholder Pages
 const Infrastructure = () => (
@@ -47,11 +48,13 @@ function App() {
           <Toaster position="top-right" reverseOrder={false} />
           <Routes>
             {/* Public Routes */}
+            <Route path="/" element={<Home />} />
             <Route path="/login" element={<Login />} />
+            <Route path="/login/:role" element={<Login />} />
             <Route path="/register" element={<Register />} />
             
             {/* Role-Based Protected Routes */}
-            <Route path="/" element={
+            <Route path="/dashboard" element={
               <ProtectedRoute>
                 <DashboardLayout>
                   <DashboardSelector />
@@ -111,6 +114,14 @@ function App() {
               <ProtectedRoute roles={['admin', 'teacher']}>
                 <DashboardLayout>
                   <Settings />
+                </DashboardLayout>
+              </ProtectedRoute>
+            } />
+
+            <Route path="/constraints" element={
+              <ProtectedRoute roles={['admin']}>
+                <DashboardLayout>
+                  <Constraints />
                 </DashboardLayout>
               </ProtectedRoute>
             } />

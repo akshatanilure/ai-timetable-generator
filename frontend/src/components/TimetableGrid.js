@@ -1,107 +1,189 @@
 import React from 'react';
 
 const TimetableGrid = ({ schedule }) => {
-  const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
-  const timeSlots = [
-    '09:00', '10:00', '11:00', '12:00', '13:00', '14:00', '15:00', '16:00'
+  const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+  const gridSlots = [
+    { start: '08:00', end: '09:00', type: 'class' },
+    { start: '09:00', end: '10:00', type: 'class' },
+    { start: '10:00', end: '10:30', type: 'short_break', label: 'T E A   B R E A K' },
+    { start: '10:30', end: '11:30', type: 'class' },
+    { start: '11:30', end: '12:30', type: 'class' },
+    { start: '12:30', end: '13:30', type: 'class' },
+    { start: '13:30', end: '14:30', type: 'lunch_break', label: 'L U N C H   B R E A K' },
+    { start: '14:30', end: '15:30', type: 'class' },
+    { start: '15:30', end: '16:30', type: 'class' },
+    { start: '16:30', end: '17:00', type: 'class' },
   ];
 
-  const getSession = (day, slot) => {
-    return schedule.find(s => s.day === day && s.startTime === slot);
+  const formatTime = (timeStr) => {
+    const [hrs, mins] = timeStr.split(':');
+    let h = parseInt(hrs);
+    const ampm = h >= 12 ? 'PM' : 'AM';
+    if (h > 12) h -= 12;
+    return `${h}:${mins} ${ampm}`;
+  };
+
+  const getSessions = (day, slotStart) => {
+    return schedule.filter(s => s.day === day && s.startTime === slotStart);
   };
 
   const getSlotSpan = (session) => {
     if (!session) return 1;
-    const start = parseInt(session.startTime.split(':')[0]);
-    const end = parseInt(session.endTime.split(':')[0]);
-    return end - start;
+    const startIndex = gridSlots.findIndex(s => s.start === session.startTime);
+    const endIndex = gridSlots.findIndex(s => s.end === session.endTime);
+    if (startIndex === -1 || endIndex === -1) return 1;
+    return endIndex - startIndex + 1;
   };
 
-  const getColorClass = (type) => {
-    switch (type) {
-      case 'lab': return 'bg-orange-100 border-l-4 border-orange-500 text-orange-700';
-      case 'elective': return 'bg-purple-100 border-l-4 border-purple-500 text-purple-700';
-      default: return 'bg-blue-100 border-l-4 border-blue-500 text-blue-700';
+  // Extract unique subjects for the bottom table
+  const uniqueSubjectsMap = new Map();
+  schedule.forEach(session => {
+    if (!session.subject) return;
+    const code = session.subject.subjectCode || 'TBD';
+    const facNames = Array.isArray(session.faculty) 
+      ? session.faculty.map(f => f.name).join(' & ') 
+      : session.faculty?.name || 'TBD';
+
+    if (!uniqueSubjectsMap.has(code)) {
+      uniqueSubjectsMap.set(code, {
+        code: code,
+        title: session.subject.subjectName,
+        credits: session.subject.credits || '-',
+        ltp: `${session.subject.lectureHours || 0}-${session.subject.tutorialHours || 0}-${session.subject.practicalHours || 0}`,
+        instructors: new Set([facNames])
+      });
+    } else {
+      uniqueSubjectsMap.get(code).instructors.add(facNames);
     }
+  });
+
+  const uniqueSubjects = Array.from(uniqueSubjectsMap.values()).map(s => ({
+    ...s,
+    instructors: Array.from(s.instructors).join(' / ')
+  }));
+
+  const skipSlots = {
+    Monday: 0, Tuesday: 0, Wednesday: 0, Thursday: 0, Friday: 0, Saturday: 0
   };
 
   return (
-    <div className="overflow-x-auto bg-white rounded-xl shadow-sm border border-gray-100">
-      <table className="w-full border-collapse">
-        <thead>
-          <tr className="bg-gray-50">
-            <th className="p-4 border-b border-r border-gray-100 text-xs font-bold text-gray-400 uppercase w-24">Time</th>
-            {days.map(day => (
-              <th key={day} className="p-4 border-b border-gray-100 text-xs font-bold text-gray-400 uppercase min-w-[150px]">
-                {day}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {timeSlots.map(slot => (
-            <tr key={slot} className="h-24">
-              <td className="p-4 border-r border-b border-gray-50 text-xs font-bold text-gray-400 text-center">
-                {slot}
-              </td>
-              {days.map(day => {
-                const session = getSession(day, slot);
-                if (session) {
-                  const span = getSlotSpan(session);
-                  // Only render if it's the start slot
-                  return (
-                    <td 
-                      key={`${day}-${slot}`} 
-                      rowSpan={span}
-                      className={`p-2 border-b border-gray-50 align-top`}
-                    >
-                      <div className={`h-full p-3 rounded-lg text-xs flex flex-col justify-between ${getColorClass(session.type)}`}>
-                        <div>
-                          <p className="font-bold uppercase tracking-tight">{session.subject?.subjectName || 'Subject'}</p>
-                          <p className="mt-1 opacity-80">{session.room?.roomNumber || 'Room'}</p>
-                        </div>
-                        <div className="mt-2 flex items-center justify-between">
-                          <p className="font-medium truncate italic">
-                            {Array.isArray(session.faculty) 
-                              ? session.faculty.map(f => f.name).join(', ') 
-                              : session.faculty?.name || 'Faculty'}
-                          </p>
-                          {session.batch && (
-                            <span className="px-1.5 py-0.5 bg-white/50 rounded text-[10px] font-bold">
-                              {session.batch.batchName}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    </td>
-                  );
-                }
-                
-                // Logic to skip cells covered by rowSpan
-                // Simplified for this version: we check if there's an ongoing session
-                const ongoing = schedule.find(s => {
-                  const sStart = parseInt(s.startTime.split(':')[0]);
-                  const sEnd = parseInt(s.endTime.split(':')[0]);
-                  const current = parseInt(slot.split(':')[0]);
-                  return s.day === day && current > sStart && current < sEnd;
-                });
-                
-                if (ongoing) return null;
-
-                return (
-                  <td key={`${day}-${slot}`} className="p-2 border-b border-gray-50 bg-gray-50/20 group hover:bg-gray-50 transition-colors">
-                    {slot === '13:00' && (
-                      <div className="h-full flex items-center justify-center text-[10px] font-bold text-gray-300 uppercase tracking-widest">
-                        Lunch Break
-                      </div>
-                    )}
-                  </td>
-                );
-              })}
+    <div className="flex flex-col gap-6">
+      <div className="overflow-x-auto bg-white rounded shadow border border-gray-300 p-2">
+        <table className="w-full border-collapse border border-gray-400 text-sm">
+          <thead>
+            <tr className="bg-gray-100">
+              <th className="border border-gray-400 p-2 w-24">Days</th>
+              {gridSlots.map((slot, i) => (
+                <th key={i} className="border border-gray-400 p-2 min-w-[120px] font-semibold text-center">
+                  <div className="flex flex-col">
+                    <span>{formatTime(slot.start)} to</span>
+                    <span>{formatTime(slot.end)}</span>
+                  </div>
+                </th>
+              ))}
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {days.map((day, dayIndex) => (
+              <tr key={day} className="h-20 hover:bg-gray-50 transition-colors">
+                <td className="border border-gray-400 p-2 font-bold text-center bg-gray-50">
+                  {day.substring(0, 3)}
+                </td>
+                
+                {gridSlots.map((slot, slotIndex) => {
+                  if (slot.type === 'short_break' || slot.type === 'lunch_break') {
+                    if (dayIndex === 0) {
+                      return (
+                        <td 
+                          key={slotIndex} 
+                          rowSpan={days.length} 
+                          className="border border-gray-400 bg-gray-100 text-center text-gray-700 font-bold w-12 tracking-[0.2em]"
+                        >
+                          <div className="flex items-center justify-center h-full">
+                            <span style={{ writingMode: 'vertical-rl', textOrientation: 'upright' }}>
+                              {slot.label}
+                            </span>
+                          </div>
+                        </td>
+                      );
+                    }
+                    return null;
+                  }
+
+                  if (skipSlots[day] > 0) {
+                    skipSlots[day]--;
+                    return null;
+                  }
+
+                  const sessions = getSessions(day, slot.start);
+                  if (sessions.length > 0) {
+                    const span = getSlotSpan(sessions[0]);
+                    skipSlots[day] = span - 1;
+                    
+                    return (
+                      <td 
+                        key={slotIndex} 
+                        colSpan={span} 
+                        className="border border-gray-400 p-2 text-center align-middle hover:bg-blue-50 transition-colors"
+                      >
+                        <div className="flex flex-col items-center justify-center gap-1">
+                          {sessions.map((s, idx) => (
+                            <React.Fragment key={idx}>
+                              <span className="font-semibold text-gray-800">
+                                {s.subject?.subjectCode || s.subject?.subjectName}
+                                {s.room ? ` (R N ${s.room.roomNumber.replace('R', '')})` : ''}
+                              </span>
+                              {idx < sessions.length - 1 && <span className="text-gray-400 my-1 border-b border-gray-300 w-full block"></span>}
+                            </React.Fragment>
+                          ))}
+                        </div>
+                      </td>
+                    );
+                  }
+
+                  return (
+                    <td key={slotIndex} className="border border-gray-400 p-2"></td>
+                  );
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      <div className="overflow-x-auto bg-white rounded shadow border border-gray-300 p-2 mt-4">
+        <table className="w-full border-collapse border border-gray-400 text-sm">
+          <thead>
+            <tr className="bg-gray-100">
+              <th className="border border-gray-400 p-2 text-left font-bold w-32">Course Code</th>
+              <th className="border border-gray-400 p-2 text-left font-bold">Course Title</th>
+              <th className="border border-gray-400 p-2 text-center font-bold w-20">Credits</th>
+              <th className="border border-gray-400 p-2 text-center font-bold w-24">L-T-P</th>
+              <th className="border border-gray-400 p-2 text-left font-bold w-64">Course Instructor</th>
+            </tr>
+          </thead>
+          <tbody>
+            {uniqueSubjects.map((sub, i) => (
+              <tr key={i} className="hover:bg-gray-50">
+                <td className="border border-gray-400 p-2 font-semibold text-gray-800">{sub.code}</td>
+                <td className="border border-gray-400 p-2 text-gray-800">{sub.title}</td>
+                <td className="border border-gray-400 p-2 text-center text-gray-700">{sub.credits}</td>
+                <td className="border border-gray-400 p-2 text-center text-gray-700">{sub.ltp}</td>
+                <td className="border border-gray-400 p-2 text-gray-800 italic">{sub.instructors}</td>
+              </tr>
+            ))}
+            {uniqueSubjects.length > 0 && (
+              <tr className="bg-gray-50 font-bold">
+                <td colSpan="2" className="border border-gray-400 p-2 text-right">Total</td>
+                <td className="border border-gray-400 p-2 text-center">
+                  {uniqueSubjects.reduce((acc, curr) => acc + (parseInt(curr.credits) || 0), 0)}
+                </td>
+                <td colSpan="2" className="border border-gray-400 p-2"></td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 };

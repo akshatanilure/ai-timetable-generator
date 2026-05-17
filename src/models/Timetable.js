@@ -31,11 +31,11 @@ const timetableSchema = new mongoose.Schema(
           ref: 'Subject',
           required: true,
         },
-        faculty: {
+        faculty: [{
           type: mongoose.Schema.Types.ObjectId,
           ref: 'Teacher',
           required: true,
-        },
+        }],
         room: {
           type: mongoose.Schema.Types.ObjectId,
           ref: 'Room',
@@ -60,6 +60,15 @@ const timetableSchema = new mongoose.Schema(
         type: String,
       },
     ],
+    settings: {
+      college_start_time: String,
+      college_end_time: String,
+      period_duration: Number,
+      short_break_start: String,
+      short_break_end: String,
+      lunch_break_start: String,
+      lunch_break_end: String
+    },
     generatedAt: {
       type: Date,
       default: Date.now,

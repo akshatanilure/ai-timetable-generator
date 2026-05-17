@@ -15,6 +15,17 @@ const teacherSchema = new mongoose.Schema(
         'Please add a valid email',
       ],
     },
+    facultyId: {
+      type: String,
+      unique: true,
+      sparse: true,
+    },
+    designation: {
+      type: String,
+    },
+    specialization: {
+      type: String,
+    },
     department: {
       type: String,
       required: [true, 'Please add a department'],
@@ -59,6 +70,10 @@ const teacherSchema = new mongoose.Schema(
     maxWorkloadPerWeek: {
       type: Number,
       default: 30,
+    },
+    currentWorkload: {
+      type: Number,
+      default: 0,
     },
     user: {
       type: mongoose.Schema.Types.ObjectId,
