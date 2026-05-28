@@ -108,7 +108,31 @@ exports.updateTeacher = async (req, res) => {
     }
 
     // Make sure user is teacher owner or admin
-    if (teacher.user?.toString() !== req.user.id && req.user.role !== 'admin') {
+    let isAuthorized = req.user.role === 'admin';
+
+    if (!isAuthorized) {
+      if (teacher.user) {
+        isAuthorized = teacher.user.toString() === req.user.id;
+      } else {
+        // Fallback: match by email or name if user field is not populated/linked yet
+        const emailMatch = teacher.email && req.user.email && 
+          teacher.email.toLowerCase() === req.user.email.toLowerCase();
+        const nameMatch = teacher.name && req.user.name && 
+          (teacher.name.toLowerCase().includes(req.user.name.toLowerCase()) || 
+           req.user.name.toLowerCase().includes(teacher.name.toLowerCase()));
+        
+        if (emailMatch || nameMatch) {
+          isAuthorized = true;
+        }
+      }
+
+      // If authorized, ensure the teacher profile is linked to the user ID
+      if (isAuthorized) {
+        req.body.user = req.user.id;
+      }
+    }
+
+    if (!isAuthorized) {
       return res.status(401).json({ success: false, error: 'Not authorized to update this profile' });
     }
 

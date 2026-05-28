@@ -8,7 +8,7 @@ const {
 } = require('../controllers/teacherController');
 const { protect } = require('../middleware/authMiddleware');
 const { isAdmin, isAdminOrTeacher } = require('../middleware/roleMiddleware');
-const { validateTeacher } = require('../middleware/validation/teacherValidation');
+const { validateTeacher, validateTeacherUpdate } = require('../middleware/validation/teacherValidation');
 
 const router = express.Router();
 
@@ -20,7 +20,7 @@ router
 router
   .route('/:id')
   .get(protect, isAdminOrTeacher, getTeacher)
-  .put(protect, isAdminOrTeacher, validateTeacher, updateTeacher)
+  .put(protect, isAdminOrTeacher, validateTeacherUpdate, updateTeacher)
   .delete(protect, isAdmin, deleteTeacher);
 
 module.exports = router;

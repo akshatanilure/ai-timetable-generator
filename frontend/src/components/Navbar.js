@@ -23,7 +23,7 @@ const Navbar = ({ toggleSidebar }) => {
   // If user is logged in, show the Dashboard Navbar
   if (user) {
     return (
-      <header className="flex items-center justify-between px-6 py-4 bg-white border-b border-gray-100 sticky top-0 z-40">
+      <header className="flex items-center justify-between px-6 py-4 bg-white border-b border-gray-100 sticky top-0 z-40 print:hidden">
         <div className="flex items-center">
           <button onClick={toggleSidebar} className="text-gray-500 hover:text-indigo-600 focus:outline-none lg:hidden transition-colors">
             <FiMenu size={24} />

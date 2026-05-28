@@ -10,7 +10,7 @@ const TeacherDashboard = () => {
   const isAdmin = user?.role === 'admin';
   
   const [teachers, setTeachers] = useState([]);
-  const [selectedTeacherId, setSelectedTeacherId] = useState(isTeacher ? user._id : '');
+  const [selectedTeacherId, setSelectedTeacherId] = useState('');
   const [timetables, setTimetables] = useState([]);
   const [selectedTimetableId, setSelectedTimetableId] = useState('');
   const [workloadData, setWorkloadData] = useState(null);
@@ -21,9 +21,26 @@ const TeacherDashboard = () => {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        if (isAdmin) {
-          const teachersRes = await api.get('/teachers');
-          setTeachers(teachersRes.data.data);
+        const teachersRes = await api.get('/teachers');
+        setTeachers(teachersRes.data.data);
+        
+        if (isTeacher) {
+          // Find matching teacher record by user reference or name
+          const currentTeacher = teachersRes.data.data.find(t => 
+            t.user?._id === user?._id || t.user === user?._id
+          );
+          if (currentTeacher) {
+            setSelectedTeacherId(currentTeacher._id);
+          } else {
+            // Name matching fallback
+            const nameMatch = teachersRes.data.data.find(t => 
+              t.name.toLowerCase().includes(user?.name?.toLowerCase()) || 
+              user?.name?.toLowerCase().includes(t.name.toLowerCase())
+            );
+            if (nameMatch) {
+              setSelectedTeacherId(nameMatch._id);
+            }
+          }
         }
         
         const timetablesRes = await api.get('/timetables');
@@ -33,11 +50,11 @@ const TeacherDashboard = () => {
           setSelectedTimetableId(timetablesRes.data.data[0]._id);
         }
       } catch (err) {
-        console.error('Error loading initial data');
+        console.error('Error loading initial data', err);
       }
     };
     fetchData();
-  }, [isAdmin]);
+  }, [isTeacher, user]);
 
   const fetchTeacherMetrics = useCallback(async () => {
     if (!selectedTeacherId || !selectedTimetableId) return;
@@ -76,7 +93,7 @@ const TeacherDashboard = () => {
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-gray-800 flex items-center">
-            {isTeacher ? <FiUserCheck className="mr-2 text-primary" /> : <FiUser className="mr-2 text-primary" />}
+            {isTeacher ? <FiUserCheck className="mr-2 text-indigo-600" /> : <FiUser className="mr-2 text-indigo-600" />}
             {isTeacher ? 'My Schedule & Workload' : 'Faculty Insight'}
           </h1>
           {isTeacher && <p className="text-sm text-gray-500 mt-1">Hello, Prof. {user.name}. Here is your weekly academic summary.</p>}
@@ -118,7 +135,7 @@ const TeacherDashboard = () => {
         </div>
       ) : loading ? (
         <div className="h-64 flex items-center justify-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary"></div>
+          <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-indigo-600"></div>
         </div>
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -130,7 +147,7 @@ const TeacherDashboard = () => {
               <div className="space-y-4">
                 <div className="flex justify-between items-end">
                   <span className="text-sm text-gray-500 font-medium">Total Commited Hours</span>
-                  <span className="text-2xl font-black text-primary tracking-tighter">{workloadData?.summary?.totalWeeklyHours || 0}h</span>
+                  <span className="text-2xl font-black text-indigo-600 tracking-tighter">{workloadData?.summary?.totalWeeklyHours || 0}h</span>
                 </div>
                 <div className="w-full bg-gray-100 rounded-full h-3">
                   <div className="bg-indigo-600 h-3 rounded-full shadow-inner" style={{ width: `${Math.min((workloadData?.summary?.totalWeeklyHours / 40) * 100, 100)}%` }}></div>

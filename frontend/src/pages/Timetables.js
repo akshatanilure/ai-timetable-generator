@@ -81,26 +81,19 @@ const Timetables = () => {
           <p className="text-sm text-gray-500">View and manage schedules for all divisions</p>
         </div>
         
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 print:hidden">
           <button 
-            onClick={handleGenerate}
-            disabled={generating}
-            className={`flex items-center px-4 py-2 bg-primary text-white rounded-lg shadow-md hover:bg-indigo-700 transition-all ${
-              generating ? 'opacity-70 animate-pulse' : ''
-            }`}
+            onClick={() => window.print()}
+            className="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg shadow-md transition-all font-bold text-xs"
           >
-            <FiRefreshCw className={`mr-2 ${generating ? 'animate-spin' : ''}`} />
-            {generating ? 'Generating...' : 'Generate New'}
-          </button>
-          <button className="p-2 bg-white border border-gray-200 rounded-lg text-gray-600 hover:text-primary transition-all">
-            <FiDownload />
+            <FiDownload /> Export PDF
           </button>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 print:block">
         {/* Filters & Sidebar */}
-        <div className="lg:col-span-1 space-y-4">
+        <div className="lg:col-span-1 space-y-4 print:hidden">
           <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
             <div className="flex items-center mb-4 text-gray-700 font-bold">
               <FiFilter className="mr-2" /> Filters
@@ -151,7 +144,7 @@ const Timetables = () => {
         </div>
 
         {/* Timetable Grid */}
-        <div className="lg:col-span-3">
+        <div className="lg:col-span-3 print:w-full print:col-span-4">
           {loading ? (
             <div className="h-[500px] flex items-center justify-center bg-white rounded-xl shadow-sm border border-gray-100">
               <div className="text-center">

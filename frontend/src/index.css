@@ -15,3 +15,92 @@ body {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
+
+/* Custom Scrollbar Styles for table horizontal scrolling */
+.overflow-x-auto {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(99, 102, 241, 0.3) transparent;
+  -webkit-overflow-scrolling: touch;
+}
+
+.overflow-x-auto::-webkit-scrollbar {
+  height: 6px;
+}
+
+.overflow-x-auto::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.overflow-x-auto::-webkit-scrollbar-thumb {
+  background-color: rgba(99, 102, 241, 0.3);
+  border-radius: 10px;
+}
+
+.overflow-x-auto::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(99, 102, 241, 0.6);
+}
+
+/* Print Overrides */
+@media print {
+  @page {
+    size: A4 landscape;
+    margin: 8mm;
+  }
+  
+  body {
+    background-color: #fff !important;
+    color: #000 !important;
+  }
+
+  /* Force elements to display full width without horizontal clipping or scrollbars */
+  .overflow-x-auto {
+    overflow-x: visible !important;
+    overflow: visible !important;
+    display: block !important;
+  }
+
+  /* Hide print scrollbar tracks entirely */
+  ::-webkit-scrollbar {
+    display: none !important;
+  }
+
+  /* Shrink timetable cells and text sizes so it fits perfectly on A4 landscape */
+  table {
+    width: 100% !important;
+    font-size: 11px !important;
+    border-collapse: collapse !important;
+  }
+
+  /* Specific fixed layout for the Timetable grid to avoid squeezing columns */
+  table.timetable-grid-table {
+    table-layout: fixed !important;
+    font-size: 9px !important;
+  }
+  
+  th, td {
+    padding: 4px !important;
+    word-break: break-word !important;
+    overflow-wrap: break-word !important;
+  }
+
+  /* Target first column (Days) to prevent ugly vertical letter stacking */
+  table.timetable-grid-table th:first-child,
+  table.timetable-grid-table td:first-child {
+    width: 60px !important;
+    min-width: 60px !important;
+    max-width: 60px !important;
+    white-space: nowrap !important;
+  }
+
+  /* Target rowspan column (Breaks) to be appropriately sized */
+  table.timetable-grid-table td[rowspan] {
+    width: 35px !important;
+    min-width: 35px !important;
+    max-width: 35px !important;
+    padding: 2px !important;
+  }
+
+  th min-width, td min-width {
+    min-width: 0 !important;
+  }
+}

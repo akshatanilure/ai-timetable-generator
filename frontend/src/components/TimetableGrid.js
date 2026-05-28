@@ -68,8 +68,8 @@ const TimetableGrid = ({ schedule }) => {
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="overflow-x-auto bg-white rounded shadow border border-gray-300 p-2">
-        <table className="w-full border-collapse border border-gray-400 text-sm">
+      <div className="overflow-x-auto bg-white rounded shadow border border-gray-300 p-2 print:overflow-visible print:border-none print:shadow-none print:p-0">
+        <table className="w-full border-collapse border border-gray-400 text-sm timetable-grid-table">
           <thead>
             <tr className="bg-gray-100">
               <th className="border border-gray-400 p-2 w-24">Days</th>
@@ -131,12 +131,12 @@ const TimetableGrid = ({ schedule }) => {
                         <div className="flex flex-col items-center justify-center gap-1 text-xs">
                           {isLabGroup ? (
                             <>
-                               <span className="font-bold text-gray-800">
+                               <span className="font-bold text-gray-800 break-words">
                                   {sessions.map(s => {
                                     const code = s.subject?.subjectCode || s.subject?.subjectName || '';
                                     const bName = s.batch?.batchName;
                                     return bName ? `${code}(${bName})` : code;
-                                  }).join('/')}
+                                  }).join(' / ')}
                                </span>
                             </>
                           ) : (
@@ -174,7 +174,7 @@ const TimetableGrid = ({ schedule }) => {
         </table>
       </div>
 
-      <div className="overflow-x-auto bg-white rounded shadow border border-gray-300 p-2 mt-4">
+      <div className="overflow-x-auto bg-white rounded shadow border border-gray-300 p-2 mt-4 print:overflow-visible print:border-none print:shadow-none print:p-0">
         <table className="w-full border-collapse border border-gray-400 text-sm">
           <thead>
             <tr className="bg-gray-100">

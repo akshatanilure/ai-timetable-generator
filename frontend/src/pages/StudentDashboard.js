@@ -43,10 +43,18 @@ const StudentDashboard = () => {
     
     setLoading(true);
     try {
-      const match = timetables.find(t => 
-        t.semester.toString() === filters.semester.toString() && 
-        (t.division?.divisionName === filters.division || !filters.division)
-      );
+      const normalizeDiv = (name) => {
+        if (!name) return '';
+        return name.replace(/div[\-\s]?/i, '').trim().toLowerCase();
+      };
+
+      const match = timetables.find(t => {
+        const tSem = t.semester ? t.semester.toString() : '';
+        const fSem = filters.semester ? filters.semester.toString() : '';
+        const tDiv = normalizeDiv(t.division?.divisionName);
+        const fDiv = normalizeDiv(filters.division);
+        return tSem === fSem && (tDiv === fDiv || !filters.division);
+      });
 
       if (match) {
         const res = await api.get(`/timetables/${match._id}`);
@@ -55,7 +63,7 @@ const StudentDashboard = () => {
         setSelectedTimetable(null);
       }
     } catch (err) {
-      console.error('Error searching timetable');
+      console.error('Error searching timetable', err);
     } finally {
       setLoading(false);
     }
@@ -88,7 +96,7 @@ const StudentDashboard = () => {
           {!hasProfileData && (
             <div className="flex items-center gap-2">
               <select 
-                className="px-4 py-2 border border-gray-200 rounded-xl text-sm focus:ring-1 focus:ring-primary outline-none bg-gray-50"
+                className="px-4 py-2 border border-gray-200 rounded-xl text-sm focus:ring-1 focus:ring-indigo-600 outline-none bg-gray-50"
                 value={filters.semester}
                 onChange={(e) => setFilters({...filters, semester: e.target.value})}
               >
@@ -97,7 +105,7 @@ const StudentDashboard = () => {
               </select>
               
               <select 
-                className="px-4 py-2 border border-gray-200 rounded-xl text-sm focus:ring-1 focus:ring-primary outline-none bg-gray-50"
+                className="px-4 py-2 border border-gray-200 rounded-xl text-sm focus:ring-1 focus:ring-indigo-600 outline-none bg-gray-50"
                 value={filters.division}
                 onChange={(e) => setFilters({...filters, division: e.target.value})}
               >
@@ -107,7 +115,7 @@ const StudentDashboard = () => {
               
               <button 
                 onClick={handleSearch}
-                className="flex items-center px-6 py-2 bg-primary text-white rounded-xl hover:bg-indigo-700 transition-all font-bold shadow-lg shadow-indigo-100"
+                className="flex items-center px-6 py-2 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition-all font-bold shadow-lg shadow-indigo-100"
               >
                 <FiSearch className="mr-2" /> Load
               </button>
@@ -125,13 +133,13 @@ const StudentDashboard = () => {
       <div className="flex space-x-1 bg-gray-100 p-1 rounded-2xl w-fit print:hidden">
         <button 
           onClick={() => setActiveTab('timetable')}
-          className={`flex items-center px-6 py-2 rounded-xl text-sm font-bold transition-all ${activeTab === 'timetable' ? 'bg-white text-primary shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+          className={`flex items-center px-6 py-2 rounded-xl text-sm font-bold transition-all ${activeTab === 'timetable' ? 'bg-white text-indigo-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
         >
           <FiCalendar className="mr-2" /> Class Timetable
         </button>
         <button 
           onClick={() => setActiveTab('subjects')}
-          className={`flex items-center px-6 py-2 rounded-xl text-sm font-bold transition-all ${activeTab === 'subjects' ? 'bg-white text-primary shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+          className={`flex items-center px-6 py-2 rounded-xl text-sm font-bold transition-all ${activeTab === 'subjects' ? 'bg-white text-indigo-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
         >
           <FiBook className="mr-2" /> Subject Schedule
         </button>
@@ -146,15 +154,13 @@ const StudentDashboard = () => {
                 <span className="text-xs font-bold text-gray-400 uppercase tracking-widest">Weekly Grid View</span>
                 <button 
                   onClick={() => window.print()}
-                  className="flex items-center px-4 py-2 bg-white border border-gray-200 rounded-xl text-xs font-bold text-gray-600 hover:text-primary transition-all"
+                  className="flex items-center px-4 py-2 bg-white border border-gray-200 rounded-xl text-xs font-bold text-gray-600 hover:text-indigo-600 transition-all"
                 >
                   <FiPrinter className="mr-2" /> Export to PDF
                 </button>
               </div>
-              <div className="bg-white rounded-3xl shadow-xl overflow-hidden border border-gray-100 print:shadow-none print:border-none">
-                <div className="p-2 md:p-6">
-                  <TimetableGrid schedule={selectedTimetable.generatedSchedule} />
-                </div>
+              <div className="print:shadow-none print:border-none">
+                <TimetableGrid schedule={selectedTimetable.generatedSchedule} />
               </div>
             </div>
           ) : (
@@ -169,8 +175,8 @@ const StudentDashboard = () => {
                     {sessions.map((s, i) => (
                       <div key={i} className="flex items-center text-xs text-gray-500 bg-gray-50 p-3 rounded-2xl">
                         <FiCalendar className="mr-2 text-indigo-400" />
-                        <span className="font-bold w-16 uppercase">{s.day}</span>
-                        <span className="flex-1">{s.timeslot?.startTime} - {s.timeslot?.endTime}</span>
+                        <span className="font-bold w-24 uppercase">{s.day}</span>
+                        <span className="flex-1 text-gray-700 font-semibold">{s.startTime} - {s.endTime}</span>
                       </div>
                     ))}
                   </div>
@@ -181,7 +187,7 @@ const StudentDashboard = () => {
         </div>
       ) : !loading && (
         <div className="bg-white rounded-3xl p-20 text-center border-2 border-dashed border-gray-100">
-          <div className="w-20 h-20 bg-indigo-50 rounded-full flex items-center justify-center mx-auto mb-6 text-primary">
+          <div className="w-20 h-20 bg-indigo-50 rounded-full flex items-center justify-center mx-auto mb-6 text-indigo-600">
             <FiSearch size={32} />
           </div>
           <h2 className="text-xl font-bold text-gray-700">No schedule loaded</h2>
@@ -191,7 +197,7 @@ const StudentDashboard = () => {
 
       {loading && (
         <div className="h-96 flex flex-col items-center justify-center space-y-4">
-          <div className="animate-spin rounded-full h-16 w-16 border-t-4 border-b-4 border-primary"></div>
+          <div className="animate-spin rounded-full h-16 w-16 border-t-4 border-b-4 border-indigo-600"></div>
           <p className="text-sm font-bold text-gray-500 animate-pulse">Syncing academic records...</p>
         </div>
       )}
