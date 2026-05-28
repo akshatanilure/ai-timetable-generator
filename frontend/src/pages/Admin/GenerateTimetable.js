@@ -14,9 +14,7 @@ const GenerateTimetable = () => {
   });
   const [subjects, setSubjects] = useState([]);
   const [faculties, setFaculties] = useState([]);
-  const [facultyMapping, setFacultyMapping] = useState({});
-  const [result, setResult] = useState(null);
-  const [progress, setProgress] = useState(0);
+  const [fixedTimings, setFixedTimings] = useState({});
 
   useEffect(() => {
     fetchFaculties();
@@ -44,10 +42,13 @@ const GenerateTimetable = () => {
       
       // Initialize mapping
       const initialMap = {};
+      const initialFixed = {};
       res.data.data.forEach(sub => {
-        initialMap[sub._id] = sub.subjectType === 'lab' ? [] : '';
+        initialMap[sub._id] = sub.subjectType === 'lab' ? { lab: [] } : { theory: '' };
+        initialFixed[sub._id] = { day: '', time: '' };
       });
       setFacultyMapping(initialMap);
+      setFixedTimings(initialFixed);
     } catch (err) {
       console.error('Error fetching subjects', err);
     }
@@ -55,18 +56,29 @@ const GenerateTimetable = () => {
 
   const handleFacultySelect = (subjectId, facultyId, isLab) => {
     setFacultyMapping(prev => {
-      const current = prev[subjectId];
+      const current = prev[subjectId] || {};
       if (isLab) {
-        if (current.includes(facultyId)) {
-          return { ...prev, [subjectId]: current.filter(id => id !== facultyId) };
-        } else if (current.length < 2) {
-          return { ...prev, [subjectId]: [...current, facultyId] };
+        const labArr = current.lab || [];
+        if (labArr.includes(facultyId)) {
+          return { ...prev, [subjectId]: { ...current, lab: labArr.filter(id => id !== facultyId) } };
+        } else if (labArr.length < 2) {
+          return { ...prev, [subjectId]: { ...current, lab: [...labArr, facultyId] } };
         }
         return prev;
       } else {
-        return { ...prev, [subjectId]: facultyId };
+        return { ...prev, [subjectId]: { ...current, theory: facultyId } };
       }
     });
+  };
+
+  const handleFixedTiming = (subjectId, field, value) => {
+    setFixedTimings(prev => ({
+      ...prev,
+      [subjectId]: {
+        ...(prev[subjectId] || {}),
+        [field]: value
+      }
+    }));
   };
 
   const getLTP = (sub) => {
@@ -80,11 +92,11 @@ const GenerateTimetable = () => {
   const handleGenerate = async () => {
     // Validate that all subjects have faculties
     for (let sub of subjects) {
-      const mapping = facultyMapping[sub._id];
-      if (sub.subjectType === 'lab' && mapping.length !== 2) {
+      const mapping = facultyMapping[sub._id] || {};
+      if (sub.subjectType === 'lab' && (!mapping.lab || mapping.lab.length !== 2)) {
         return alert(`Please select exactly 2 faculties for lab: ${sub.subjectName}`);
       }
-      if (sub.subjectType !== 'lab' && !mapping) {
+      if (sub.subjectType !== 'lab' && !mapping.theory) {
         return alert(`Please select 1 faculty for theory: ${sub.subjectName}`);
       }
     }
@@ -97,15 +109,35 @@ const GenerateTimetable = () => {
       setProgress(prev => (prev < 90 ? prev + 10 : prev));
     }, 500);
 
+    // Format fixed timings
+    const formattedFixedTimings = { "DIV-A": {} };
+    Object.keys(fixedTimings).forEach(subId => {
+      if (fixedTimings[subId].day && fixedTimings[subId].time) {
+        formattedFixedTimings["DIV-A"][subId] = [
+          { day: fixedTimings[subId].day, time: fixedTimings[subId].time }
+        ];
+      }
+    });
+
     try {
       const res = await api.post('/timetables/generate-ml', {
         ...config,
-        facultyMapping
+        facultyMapping,
+        fixedTimings: formattedFixedTimings
       });
       setProgress(100);
       setResult(res.data);
+      
+      // Automatically save to database
+      if (res.data && res.data.data && res.data.data.rawSchedules) {
+        await api.post('/timetables/save-ml', {
+          semester: config.semester,
+          branch: config.branch,
+          rawSchedules: res.data.data.rawSchedules
+        });
+      }
     } catch (err) {
-      alert(err.response?.data?.error || 'Generation failed');
+      alert(err.response?.data?.error || err.response?.data?.details || 'Generation failed');
     } finally {
       clearInterval(interval);
       setLoading(false);
@@ -217,11 +249,11 @@ const GenerateTimetable = () => {
                   <h3 className="text-xl font-bold text-green-800 flex items-center">
                     <FiCheckCircle className="mr-2" /> Timetable Generated Successfully
                   </h3>
-                  <p className="text-sm text-green-600 mt-1">100% constraints satisfied. No clashes detected.</p>
+                  <p className="text-sm text-green-600 mt-1">Constraints satisfied. Saved to database.</p>
                 </div>
                 <div className="flex gap-3">
-                  <button className="px-4 py-2 bg-white text-green-700 font-bold rounded-lg shadow-sm border border-green-200 hover:bg-green-100 text-sm">
-                    View Preview
+                  <button onClick={() => setResult(null)} className="px-4 py-2 bg-white text-green-700 font-bold rounded-lg shadow-sm border border-green-200 hover:bg-green-100 text-sm">
+                    Generate Another
                   </button>
                   <button className="px-4 py-2 bg-green-600 text-white font-bold rounded-lg shadow-sm hover:bg-green-700 text-sm">
                     Export PDF
@@ -269,6 +301,34 @@ const GenerateTimetable = () => {
                             <span>Cr: {sub.credits}</span>
                             <span>{getHours(sub)} Hrs/Wk</span>
                           </div>
+                          
+                          {/* Fixed Timing Selection (For Theory Subjects) */}
+                          {sub.subjectType !== 'lab' && (
+                            <div className="mt-4 p-4 bg-gray-50 rounded-xl border border-gray-200 shadow-inner">
+                              <label className="text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-2 block flex items-center">
+                                <FiClock className="mr-1" /> Fixed Slot (Optional)
+                              </label>
+                              <div className="flex flex-col gap-2">
+                                <select 
+                                  className="w-full p-2 text-xs font-bold text-gray-700 border border-gray-300 rounded-lg bg-white outline-none focus:ring-2 focus:ring-indigo-500 transition-all"
+                                  value={fixedTimings[sub._id]?.day || ''}
+                                  onChange={(e) => handleFixedTiming(sub._id, 'day', e.target.value)}
+                                >
+                                  <option value="">-- Any Day --</option>
+                                  {['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'].map(d => <option key={d} value={d}>{d}</option>)}
+                                </select>
+                                <select 
+                                  className="w-full p-2 text-xs font-bold text-gray-700 border border-gray-300 rounded-lg bg-white outline-none focus:ring-2 focus:ring-indigo-500 transition-all"
+                                  value={fixedTimings[sub._id]?.time || ''}
+                                  onChange={(e) => handleFixedTiming(sub._id, 'time', e.target.value)}
+                                  disabled={!fixedTimings[sub._id]?.day}
+                                >
+                                  <option value="">-- Any Time --</option>
+                                  {["08:00", "09:00", "10:30", "11:30", "12:30", "14:30", "15:30", "16:30"].map(t => <option key={t} value={t}>{t}</option>)}
+                                </select>
+                              </div>
+                            </div>
+                          )}
                         </div>
 
                         {/* Faculty Selection */}
@@ -277,60 +337,131 @@ const GenerateTimetable = () => {
                             {sub.subjectType === 'lab' ? 'Select 2 Faculties (Main & Assistant)' : 'Select 1 Faculty'}
                           </p>
                           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-[200px] overflow-y-auto pr-2 custom-scrollbar">
-                            {faculties.map(fac => {
-                              const isSelected = sub.subjectType === 'lab' 
-                                ? facultyMapping[sub._id]?.includes(fac._id)
-                                : facultyMapping[sub._id] === fac._id;
-                              
-                              const over = isOverloaded(fac);
+                            {(() => {
+                              const subNameLower = (sub.subjectName || '').toLowerCase();
+                              const subCodeLower = (sub.subjectCode || '').toLowerCase();
+                              const subDeptLower = (sub.department || '').toLowerCase();
 
-                              return (
-                                <label 
-                                  key={fac._id}
-                                  className={`
-                                    relative flex items-start p-3 rounded-xl border-2 cursor-pointer transition-all
-                                    ${isSelected ? 'border-indigo-500 bg-indigo-50 shadow-sm' : 'border-gray-100 bg-white hover:border-gray-200'}
-                                    ${over && !isSelected ? 'opacity-50 grayscale cursor-not-allowed' : ''}
-                                  `}
-                                >
-                                  <div className="min-w-0 flex-1">
-                                    <div className="flex justify-between items-center mb-1">
-                                      <p className="text-sm font-bold text-gray-900 truncate">{fac.name}</p>
-                                      {sub.subjectType === 'lab' ? (
-                                        <input 
-                                          type="checkbox"
-                                          disabled={over && !isSelected}
-                                          checked={isSelected || false}
-                                          onChange={() => handleFacultySelect(sub._id, fac._id, true)}
-                                          className="text-indigo-600 rounded focus:ring-indigo-500 w-4 h-4"
-                                        />
-                                      ) : (
-                                        <input 
-                                          type="radio"
-                                          name={`fac-${sub._id}`}
-                                          disabled={over}
-                                          checked={isSelected || false}
-                                          onChange={() => handleFacultySelect(sub._id, fac._id, false)}
-                                          className="text-indigo-600 focus:ring-indigo-500 w-4 h-4"
-                                        />
-                                      )}
-                                    </div>
-                                    <p className="text-xs text-gray-500 truncate">{fac.designation || fac.department}</p>
-                                    <div className="mt-2 flex items-center gap-2">
-                                      <div className="flex-1 bg-gray-200 h-1.5 rounded-full overflow-hidden">
-                                        <div 
-                                          className={`h-full ${over ? 'bg-red-500' : 'bg-green-500'}`}
-                                          style={{ width: `${Math.min(((fac.currentWorkload || 0) / (fac.maxWorkloadPerWeek || 30)) * 100, 100)}%` }}
-                                        ></div>
+                              const isMath = subNameLower.includes('math') || subNameLower.includes('mats') || subCodeLower.includes('mat') || subCodeLower.includes('mac') || subDeptLower.includes('math');
+                              const isPhysics = subNameLower.includes('physics') || subNameLower.includes('phys') || subCodeLower.includes('phy') || subDeptLower.includes('physics') || subDeptLower.includes('phys');
+                              const isChemistry = subNameLower.includes('chemistry') || subNameLower.includes('chem') || subCodeLower.includes('che') || subDeptLower.includes('chemistry') || subDeptLower.includes('chem');
+
+                              let filteredFaculties = faculties;
+                              if (isMath) {
+                                filteredFaculties = faculties.filter(f => {
+                                  const nameLower = (f.name || '').toLowerCase();
+                                  const deptLower = (f.department || '').toLowerCase();
+                                  return deptLower.includes('math') || 
+                                         nameLower.includes('basavaraj') ||
+                                         nameLower.includes('varsha') ||
+                                         nameLower.includes('preti') ||
+                                         nameLower.includes('jennifer') ||
+                                         nameLower.includes('prakash') ||
+                                         nameLower.includes('basti') ||
+                                         nameLower.includes('shivalli') ||
+                                         (f.subjectsHandled || []).some(s => s.toLowerCase().includes('math') || s.toLowerCase().includes('mats'));
+                                });
+                              } else if (isPhysics) {
+                                filteredFaculties = faculties.filter(f => {
+                                  const nameLower = (f.name || '').toLowerCase();
+                                  const deptLower = (f.department || '').toLowerCase();
+                                  return deptLower.includes('physics') || deptLower.includes('phys') || 
+                                         nameLower.includes('bahubali') ||
+                                         nameLower.includes('kumar madani') ||
+                                         nameLower.includes('malathi') ||
+                                         (f.subjectsHandled || []).some(s => s.toLowerCase().includes('physics') || s.toLowerCase().includes('phys'));
+                                });
+                              } else {
+                                // Rest of the subjects: ONLY the specific 22 Computer Science (CSE) faculty should appear
+                                filteredFaculties = faculties.filter(f => {
+                                  const nameLower = (f.name || '').toLowerCase();
+                                  const deptLower = (f.department || '').toLowerCase();
+                                  return (deptLower === 'cse' || deptLower.includes('computer')) && (
+                                    nameLower.includes('umakant') ||
+                                    nameLower.includes('shrihari') ||
+                                    nameLower.includes('jayateerth') ||
+                                    nameLower.includes('vadavi') ||
+                                    nameLower.includes('raghavendra') ||
+                                    nameLower.includes('shrinivas') ||
+                                    nameLower.includes('nita') ||
+                                    nameLower.includes('vidyagouri') ||
+                                    nameLower.includes('ranganath') ||
+                                    nameLower.includes('yadawad') ||
+                                    nameLower.includes('anand') ||
+                                    nameLower.includes('pashupatimath') ||
+                                    nameLower.includes('archana') ||
+                                    nameLower.includes('shreedhar') ||
+                                    nameLower.includes('sandhya') ||
+                                    nameLower.includes('prathap') ||
+                                    nameLower.includes('basavaraj vad') ||
+                                    nameLower.includes('govind') ||
+                                    nameLower.includes('smitesh') ||
+                                    nameLower.includes('smilesh') || // alias support
+                                    nameLower.includes('sharada') ||
+                                    nameLower.includes('indira') ||
+                                    nameLower.includes('rani') ||
+                                    nameLower.includes('rashmi') ||
+                                    nameLower.includes('yashodha')
+                                  );
+                                });
+                              }
+
+                              return filteredFaculties.map(fac => {
+                                const mapping = facultyMapping[sub._id] || {};
+                                const isSelected = sub.subjectType === 'lab' 
+                                  ? mapping.lab?.includes(fac._id)
+                                  : mapping.theory === fac._id;
+                                
+                                const over = isOverloaded(fac);
+
+                                return (
+                                  <label 
+                                    key={fac._id}
+                                    className={`
+                                      relative flex items-start p-3 rounded-xl border-2 cursor-pointer transition-all
+                                      ${isSelected ? 'border-indigo-500 bg-indigo-50 shadow-sm' : 'border-gray-100 bg-white hover:border-gray-200'}
+                                      ${over && !isSelected ? 'opacity-50 grayscale cursor-not-allowed' : ''}
+                                    `}
+                                  >
+                                    <div className="min-w-0 flex-1">
+                                      <div className="flex justify-between items-center mb-1">
+                                        <p className="text-sm font-bold text-gray-900 truncate">{fac.name}</p>
+                                        {sub.subjectType === 'lab' ? (
+                                          <input 
+                                            type="checkbox"
+                                            disabled={over && !isSelected}
+                                            checked={isSelected || false}
+                                            onChange={() => handleFacultySelect(sub._id, fac._id, true)}
+                                            className="text-indigo-600 rounded focus:ring-indigo-500 w-4 h-4"
+                                          />
+                                        ) : (
+                                          <input 
+                                            type="radio"
+                                            name={`fac-${sub._id}`}
+                                            disabled={over}
+                                            checked={isSelected || false}
+                                            onChange={() => handleFacultySelect(sub._id, fac._id, false)}
+                                            className="text-indigo-600 focus:ring-indigo-500 w-4 h-4"
+                                          />
+                                        )}
                                       </div>
-                                      <span className="text-[10px] font-bold text-gray-500 whitespace-nowrap">
-                                        {fac.currentWorkload || 0}/{fac.maxWorkloadPerWeek || 30} hrs
-                                      </span>
+                                      <p className="text-xs text-gray-500 truncate">{fac.designation || fac.department}</p>
+                                      <div className="mt-2 flex items-center gap-2">
+                                        <div className="flex-1 bg-gray-200 h-1.5 rounded-full overflow-hidden">
+                                          <div 
+                                            className={`h-full ${over ? 'bg-red-500' : 'bg-green-500'}`}
+                                            style={{ width: `${Math.min(((fac.currentWorkload || 0) / (fac.maxWorkloadPerWeek || 30)) * 100, 100)}%` }}
+                                          ></div>
+                                        </div>
+                                        <span className="text-[10px] font-bold text-gray-500 whitespace-nowrap">
+                                          {fac.currentWorkload || 0}/{fac.maxWorkloadPerWeek || 30} hrs
+                                        </span>
+                                      </div>
                                     </div>
-                                  </div>
-                                </label>
-                              )
-                            })}
+                                  </label>
+                                )
+                              });
+                            })()}
                           </div>
                         </div>
                       </div>

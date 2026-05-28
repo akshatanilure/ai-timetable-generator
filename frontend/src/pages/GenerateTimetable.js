@@ -16,6 +16,7 @@ const GenerateTimetable = () => {
   });
   const [subjects, setSubjects] = useState([]);
   const [faculties, setFaculties] = useState([]);
+  const [rooms, setRooms] = useState([]);
   const [facultyMapping, setFacultyMapping] = useState({});
   const [result, setResult] = useState(null);
   const [progress, setProgress] = useState(0);
@@ -29,19 +30,38 @@ const GenerateTimetable = () => {
   const [selectedFixDay, setSelectedFixDay] = useState('');
   const [selectedFixTime, setSelectedFixTime] = useState('');
 
+  // Multiple view options
+  const [activeTab, setActiveTab] = useState('division');
+  const [selectedFacultyId, setSelectedFacultyId] = useState('');
+  const [selectedRoomId, setSelectedRoomId] = useState('');
+
   useEffect(() => {
     fetchFaculties();
+    fetchRooms();
   }, []);
+
+  const fetchRooms = async () => {
+    try {
+      const res = await api.get('/rooms');
+      setRooms(res.data.data);
+      if (res.data.data.length > 0) {
+        setSelectedRoomId(res.data.data[0]._id);
+      }
+    } catch (err) {
+      console.error('Error fetching rooms', err);
+    }
+  };
 
   useEffect(() => {
     if (config.semester && config.branch) {
       fetchSubjects();
+      fetchFaculties();
     }
   }, [config.semester, config.branch]);
 
   const fetchFaculties = async () => {
     try {
-      const res = await api.get('/teachers');
+      const res = await api.get(`/teachers?semester=${config.semester}`);
       setFaculties(res.data.data);
     } catch (err) {
       console.error('Error fetching faculties', err);
@@ -195,20 +215,6 @@ const GenerateTimetable = () => {
   };
 
   const handleGenerate = async () => {
-    // Validate that all required faculties are selected
-    for (let sub of subjects) {
-      const mapping = facultyMapping[sub._id];
-      if (hasTheory(sub) && !mapping.theory) {
-        return alert(`Please select a Theory Faculty for: ${sub.subjectName}`);
-      }
-      if (hasLab(sub) && mapping.lab.length < 2) {
-        return alert(`Please select exactly 2 Lab Faculties (Main & Assistant) for: ${sub.subjectName}`);
-      }
-      if (hasLab(sub) && mapping.lab[0] === mapping.lab[1]) {
-        return alert(`Main and Assistant faculties must be different for lab: ${sub.subjectName}`);
-      }
-    }
-
     setLoading(true);
     setProgress(10);
     setResult(null);
@@ -256,12 +262,102 @@ const GenerateTimetable = () => {
     html2pdf().set(opt).from(element).save();
   };
 
+  const getAllSessions = () => {
+    const all = [];
+    if (result && result.data && result.data.rawSchedules) {
+      Object.keys(result.data.rawSchedules).forEach(divName => {
+        result.data.rawSchedules[divName].forEach(session => {
+          all.push({ ...session, divisionName: divName });
+        });
+      });
+    }
+    return all;
+  };
+
+  const getFacultyGrid = (facultyId) => {
+    const sessions = getAllSessions().filter(s => s.faculty.some(f => f._id === facultyId));
+    const grid = {
+      Monday: {}, Tuesday: {}, Wednesday: {}, Thursday: {}, Friday: {}, Saturday: {}
+    };
+    sessions.forEach(s => {
+      const sub = subjects.find(sub => sub._id === s.subject._id) || s.subject;
+      const rm = rooms.find(r => r._id === s.room?._id) || s.room;
+      grid[s.day][s.startTime] = {
+        subject: sub,
+        room: rm,
+        divisionName: s.divisionName,
+        batch: s.batch
+      };
+    });
+    return grid;
+  };
+
+  const getRoomGrid = (roomId) => {
+    const sessions = getAllSessions().filter(s => s.room?._id === roomId);
+    const grid = {
+      Monday: {}, Tuesday: {}, Wednesday: {}, Thursday: {}, Friday: {}, Saturday: {}
+    };
+    sessions.forEach(s => {
+      const sub = subjects.find(sub => sub._id === s.subject._id) || s.subject;
+      const facNames = s.faculty.map(f => {
+        const fullFac = faculties.find(fac => fac._id === f._id);
+        return fullFac ? fullFac.name : 'Faculty';
+      }).join(' & ');
+      
+      grid[s.day][s.startTime] = {
+        subject: sub,
+        facultyName: facNames,
+        divisionName: s.divisionName,
+        batch: s.batch
+      };
+    });
+    return grid;
+  };
+
+  const getLabAllocationList = () => {
+    const sessions = getAllSessions().filter(s => s.batch && s.batch.batchName);
+    const grouped = {};
+    sessions.forEach(s => {
+      const key = `${s.day} @ ${s.startTime}`;
+      if (!grouped[key]) {
+        grouped[key] = {
+          day: s.day,
+          time: s.startTime,
+          allocations: []
+        };
+      }
+      
+      const sub = subjects.find(sub => sub._id === s.subject._id) || s.subject;
+      const rm = rooms.find(r => r._id === s.room?._id) || s.room;
+      const facs = s.faculty.map(f => {
+        const fullFac = faculties.find(fac => fac._id === f._id);
+        return fullFac ? fullFac.name : 'Faculty';
+      }).join(' & ');
+      
+      grouped[key].allocations.push({
+        division: s.divisionName,
+        batch: s.batch.batchName,
+        subject: sub,
+        faculty: facs,
+        room: rm
+      });
+    });
+    
+    return Object.values(grouped).sort((a, b) => {
+      const dayOrder = { Monday: 1, Tuesday: 2, Wednesday: 3, Thursday: 4, Friday: 5, Saturday: 6 };
+      if (dayOrder[a.day] !== dayOrder[b.day]) {
+        return dayOrder[a.day] - dayOrder[b.day];
+      }
+      return a.time.localeCompare(b.time);
+    });
+  };
+
   const getFacultyMaxWorkload = (facultyId) => {
-    if (specialRoles.hod === facultyId) return 4;
-    if (specialRoles.dean === facultyId) return 5;
-    if (specialRoles.mic === facultyId) return 3;
-    if (specialRoles.naac === facultyId) return 6;
-    return 7;
+    if (specialRoles.hod === facultyId) return 12;
+    if (specialRoles.dean === facultyId) return 10;
+    if (specialRoles.mic === facultyId) return 14;
+    if (specialRoles.naac === facultyId) return 14;
+    return 16;
   };
 
   const getFacultyOptionsForSubject = (divName, subjectId, type, labIndex) => {
@@ -271,8 +367,89 @@ const GenerateTimetable = () => {
          : (sub.practicalHours || 0);
          
      const dynamicWorkloads = calculateDynamicWorkloadsFrom(facultyMapping);
+     
+     // Filter faculties by department/name for Maths, Physics, Chemistry and Computer Science
+     let filteredFaculties = faculties;
+     if (sub) {
+       const subNameLower = (sub.subjectName || '').toLowerCase();
+       const subCodeLower = (sub.subjectCode || '').toLowerCase();
+       const subDeptLower = (sub.department || '').toLowerCase();
+
+       const isMath = subNameLower.includes('math') || subNameLower.includes('mats') || subCodeLower.includes('mat') || subCodeLower.includes('mac') || subDeptLower.includes('math');
+       const isPhysics = subNameLower.includes('physics') || subNameLower.includes('phys') || subCodeLower.includes('phy') || subDeptLower.includes('physics') || subDeptLower.includes('phys');
+       const isChemistry = subNameLower.includes('chemistry') || subNameLower.includes('chem') || subCodeLower.includes('che') || subDeptLower.includes('chemistry') || subDeptLower.includes('chem');
+
+       if (isMath) {
+         filteredFaculties = faculties.filter(f => {
+           const nameLower = (f.name || '').toLowerCase();
+           const deptLower = (f.department || '').toLowerCase();
+           return deptLower.includes('math') || 
+                  nameLower.includes('basavaraj') ||
+                  nameLower.includes('varsha') ||
+                  nameLower.includes('preti') ||
+                  nameLower.includes('jennifer') ||
+                  nameLower.includes('prakash') ||
+                  nameLower.includes('basti') ||
+                  nameLower.includes('shivalli') ||
+                  (f.subjectsHandled || []).some(s => s.toLowerCase().includes('math') || s.toLowerCase().includes('mats'));
+         });
+       } else if (isPhysics) {
+         filteredFaculties = faculties.filter(f => {
+           const nameLower = (f.name || '').toLowerCase();
+           const deptLower = (f.department || '').toLowerCase();
+           return deptLower.includes('physics') || deptLower.includes('phys') || 
+                  nameLower.includes('bahubali') ||
+                  nameLower.includes('kumar madani') ||
+                  nameLower.includes('malathi') ||
+                  (f.subjectsHandled || []).some(s => s.toLowerCase().includes('physics') || s.toLowerCase().includes('phys'));
+         });
+       } else if (isChemistry) {
+         filteredFaculties = faculties.filter(f => {
+           const nameLower = (f.name || '').toLowerCase();
+           const deptLower = (f.department || '').toLowerCase();
+           return deptLower.includes('chemistry') || deptLower.includes('chem') || 
+                  nameLower.includes('asma') ||
+                  nameLower.includes('sahana') ||
+                  nameLower.includes('priyanka') ||
+                  (f.subjectsHandled || []).some(s => s.toLowerCase().includes('chemistry') || s.toLowerCase().includes('chem'));
+         });
+       } else {
+         // Rest of the subjects: ONLY the specific 22 Computer Science (CSE) faculty should appear
+         filteredFaculties = faculties.filter(f => {
+           const nameLower = (f.name || '').toLowerCase();
+           const deptLower = (f.department || '').toLowerCase();
+           return (deptLower === 'cse' || deptLower.includes('computer')) && (
+             nameLower.includes('umakant') ||
+             nameLower.includes('shrihari') ||
+             nameLower.includes('jayateerth') ||
+             nameLower.includes('vadavi') ||
+             nameLower.includes('raghavendra') ||
+             nameLower.includes('shrinivas') ||
+             nameLower.includes('nita') ||
+             nameLower.includes('vidyagouri') ||
+             nameLower.includes('ranganath') ||
+             nameLower.includes('yadawad') ||
+             nameLower.includes('anand') ||
+             nameLower.includes('pashupatimath') ||
+             nameLower.includes('archana') ||
+             nameLower.includes('shreedhar') ||
+             nameLower.includes('sandhya') ||
+             nameLower.includes('prathap') ||
+             nameLower.includes('basavaraj vad') ||
+             nameLower.includes('govind') ||
+             nameLower.includes('smitesh') ||
+             nameLower.includes('smilesh') || // alias support
+             nameLower.includes('sharada') ||
+             nameLower.includes('indira') ||
+             nameLower.includes('rani') ||
+             nameLower.includes('rashmi') ||
+             nameLower.includes('yashodha')
+           );
+         });
+       }
+     }
          
-     return faculties.map(f => {
+     return filteredFaculties.map(f => {
        const dynamicAllocated = dynamicWorkloads[f._id] || 0;
        const totalUsed = (f.currentWorkload || 0) + dynamicAllocated;
        const max = getFacultyMaxWorkload(f._id);
@@ -332,7 +509,7 @@ const GenerateTimetable = () => {
       await api.post('/timetables/save-ml', {
         semester: config.semester,
         branch: config.branch,
-        rawSchedules: result.rawSchedules
+        rawSchedules: result.data.rawSchedules
       });
       alert('Timetables saved successfully to database!');
     } catch (error) {
@@ -424,28 +601,28 @@ const GenerateTimetable = () => {
                 </div>
               )}
               
-              <div className="pt-4 border-t border-gray-100">
-                <h3 className="text-sm font-bold text-gray-700 mb-3">Assign Faculty Roles</h3>
-                <div className="grid grid-cols-1 gap-3">
-                   <div>
-                     <label className="block text-[10px] font-bold text-gray-500 mb-1">HOD (Max 4 hrs/week)</label>
-                     <Select options={faculties.map(f => ({value: f._id, label: f.name}))} onChange={v => setSpecialRoles(p => ({...p, hod: v?.value}))} isClearable isSearchable placeholder="Search HOD..." className="text-xs" />
-                   </div>
-                   <div>
-                     <label className="block text-[10px] font-bold text-gray-500 mb-1">Dean (Max 5 hrs/week)</label>
-                     <Select options={faculties.map(f => ({value: f._id, label: f.name}))} onChange={v => setSpecialRoles(p => ({...p, dean: v?.value}))} isClearable isSearchable placeholder="Search Dean..." className="text-xs" />
-                   </div>
-                   <div>
-                     <label className="block text-[10px] font-bold text-gray-500 mb-1">MIC + Asst. Prof (Max 3 hrs/week)</label>
-                     <Select options={faculties.map(f => ({value: f._id, label: f.name}))} onChange={v => setSpecialRoles(p => ({...p, mic: v?.value}))} isClearable isSearchable placeholder="Search MIC..." className="text-xs" />
-                   </div>
-                   <div>
-                     <label className="block text-[10px] font-bold text-gray-500 mb-1">NAAC Coord. + Asst. Prof (Max 6 hrs/week)</label>
-                     <Select options={faculties.map(f => ({value: f._id, label: f.name}))} onChange={v => setSpecialRoles(p => ({...p, naac: v?.value}))} isClearable isSearchable placeholder="Search NAAC Coord..." className="text-xs" />
-                   </div>
-                </div>
-                <p className="text-[10px] text-gray-400 mt-2 font-bold">* All other unselected faculties default to Assistant Professor (Max 7 hrs/week)</p>
-              </div>
+               <div className="pt-4 border-t border-gray-100">
+                 <h3 className="text-sm font-bold text-gray-700 mb-3">Assign Faculty Roles</h3>
+                 <div className="grid grid-cols-1 gap-3">
+                    <div>
+                      <label className="block text-[10px] font-bold text-gray-500 mb-1">HOD (Max 12 hrs/week)</label>
+                      <Select options={faculties.map(f => ({value: f._id, label: f.name}))} onChange={v => setSpecialRoles(p => ({...p, hod: v?.value}))} isClearable isSearchable placeholder="Search HOD..." className="text-xs" />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-bold text-gray-500 mb-1">Dean (Max 10 hrs/week)</label>
+                      <Select options={faculties.map(f => ({value: f._id, label: f.name}))} onChange={v => setSpecialRoles(p => ({...p, dean: v?.value}))} isClearable isSearchable placeholder="Search Dean..." className="text-xs" />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-bold text-gray-500 mb-1">MIC + Asst. Prof (Max 14 hrs/week)</label>
+                      <Select options={faculties.map(f => ({value: f._id, label: f.name}))} onChange={v => setSpecialRoles(p => ({...p, mic: v?.value}))} isClearable isSearchable placeholder="Search MIC..." className="text-xs" />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-bold text-gray-500 mb-1">NAAC Coord. + Asst. Prof (Max 14 hrs/week)</label>
+                      <Select options={faculties.map(f => ({value: f._id, label: f.name}))} onChange={v => setSpecialRoles(p => ({...p, naac: v?.value}))} isClearable isSearchable placeholder="Search NAAC Coord..." className="text-xs" />
+                    </div>
+                 </div>
+                 <p className="text-[10px] text-gray-400 mt-2 font-bold">* All other unselected faculties default to Assistant Professor (Max 16 hrs/week)</p>
+               </div>
             </div>
           </div>
 
@@ -607,10 +784,30 @@ const GenerateTimetable = () => {
                 </div>
               </div>
 
-              {showPreview && result.data?.matrix && Object.keys(result.data.matrix).map(divId => {
+              {/* View Selection Tab Toggler */}
+              <div className="flex bg-gray-100 p-1.5 rounded-xl gap-2 border border-gray-200">
+                <button 
+                  onClick={() => setActiveTab('division')}
+                  className={`flex-1 py-2 text-xs font-bold rounded-lg transition-all ${
+                    activeTab === 'division' ? 'bg-white shadow-sm text-indigo-700' : 'text-gray-500 hover:text-gray-700'
+                  }`}
+                >
+                  Division View
+                </button>
+                <button 
+                  onClick={() => setActiveTab('faculty')}
+                  className={`flex-1 py-2 text-xs font-bold rounded-lg transition-all ${
+                    activeTab === 'faculty' ? 'bg-white shadow-sm text-indigo-700' : 'text-gray-500 hover:text-gray-700'
+                  }`}
+                >
+                  Faculty View
+                </button>
+              </div>
+
+              {/* Division-wise Timetables */}
+              {activeTab === 'division' && showPreview && result.data?.matrix && Object.keys(result.data.matrix).map(divId => {
                 const division = result.data.matrix[divId];
                 const days = Object.keys(division.days);
-                const slots = result.data.slots || Object.keys(division.days[days[0]] || {});
 
                 return (
                   <div key={divId} id="timetable-preview" className="bg-white p-6 rounded-2xl shadow-sm border border-gray-200 overflow-x-auto">
@@ -679,11 +876,14 @@ const GenerateTimetable = () => {
                                 const colSpan = isLab ? 2 : 1;
                                 if (isLab) skipNext = true;
                                 
-                                const facNames = Array.isArray(cell.faculty) ? cell.faculty.map(f => f.name).join(' / ') : cell.faculty.name;
+                                const facNames = Array.isArray(cell.faculty) ? cell.faculty.filter(f=>f).map(f => f.name || '').join(' / ') : (cell.faculty?.name || '');
+                                const roomString = Array.isArray(cell.room) 
+                                  ? cell.room.filter(r=>r).map(r => (r.roomNumber || '').replace('R', '')).join('/') 
+                                  : (cell.room?.roomNumber || '').replace('R', '');
 
                                 return (
                                   <td key={index} colSpan={colSpan} className={`border border-gray-400 p-1 text-center align-middle ${isLab ? 'bg-indigo-50' : 'bg-white'}`}>
-                                    <div className="font-bold text-[11px] text-gray-800">{cell.subject.subjectCode}{cell.room ? ` (R N ${cell.room.roomNumber.replace('R', '')})` : ''}</div>
+                                    <div className="font-bold text-[11px] text-gray-800">{cell.subject?.subjectCode || ''}{roomString ? ` (R N ${roomString})` : ''}</div>
                                     <div className="text-[10px] text-gray-600 mt-1">{facNames}</div>
                                   </td>
                                 );
@@ -693,9 +893,172 @@ const GenerateTimetable = () => {
                         })}
                       </tbody>
                     </table>
+
+                    {/* Faculty-Course-Credit Table */}
+                    <div className="mt-8 border-t border-gray-200 pt-6">
+                      <h3 className="text-base font-black text-gray-800 mb-3 text-center">Faculty - Course - Credit Mapping</h3>
+                      <table className="w-full text-left border-collapse text-xs">
+                        <thead>
+                          <tr className="bg-gray-50 font-bold text-gray-700">
+                            <th className="border border-gray-400 p-2 text-center w-32">Course Code</th>
+                            <th className="border border-gray-400 p-2">Course Title</th>
+                            <th className="border border-gray-400 p-2 text-center w-20">Credits</th>
+                            <th className="border border-gray-400 p-2 text-center w-24">L-T-P</th>
+                            <th className="border border-gray-400 p-2">Course Instructor</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {subjects.map(sub => {
+                            const instructors = [];
+                            const map = facultyMapping[division.divisionName]?.[sub._id] || {};
+                            if (map.theory) {
+                              const fac = faculties.find(f => f._id === map.theory);
+                              if (fac) instructors.push(fac.name);
+                            }
+                            if (map.lab && map.lab.length > 0) {
+                              map.lab.forEach(id => {
+                                if (id) {
+                                  const fac = faculties.find(f => f._id === id);
+                                  if (fac && !instructors.includes(fac.name)) instructors.push(fac.name);
+                                }
+                              });
+                            }
+                            const instructorName = instructors.length > 0 ? instructors.join(' / ') : 'TBD';
+
+                            return (
+                              <tr key={sub._id}>
+                                <td className="border border-gray-400 p-2 text-center font-mono">{sub.subjectCode}</td>
+                                <td className="border border-gray-400 p-2 font-medium">{sub.subjectName}</td>
+                                <td className="border border-gray-400 p-2 text-center">{sub.credits}</td>
+                                <td className="border border-gray-400 p-2 text-center font-mono">{getLTP(sub)}</td>
+                                <td className="border border-gray-400 p-2">{instructorName}</td>
+                              </tr>
+                            );
+                          })}
+                          <tr className="bg-gray-50 font-bold">
+                            <td colSpan="2" className="border border-gray-400 p-2 text-right">Total</td>
+                            <td className="border border-gray-400 p-2 text-center">
+                              {subjects.reduce((sum, sub) => {
+                                const val = parseFloat(sub.credits);
+                                return isNaN(val) ? sum : sum + val;
+                              }, 0)}
+                            </td>
+                            <td colSpan="2" className="border border-gray-400 p-2"></td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
                   </div>
                 );
               })}
+
+              {/* Faculty-wise Timetables */}
+              {activeTab === 'faculty' && (
+                <div className="space-y-4">
+                  <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm flex items-center gap-4">
+                    <label className="text-xs font-bold text-gray-600">Select Faculty Member:</label>
+                    <select 
+                      value={selectedFacultyId} 
+                      onChange={e => setSelectedFacultyId(e.target.value)}
+                      className="p-2 border border-gray-200 rounded-lg text-xs bg-gray-50 outline-none focus:border-indigo-500 min-w-[200px]"
+                    >
+                      <option value="">-- Select Faculty --</option>
+                      {faculties.map(f => <option key={f._id} value={f._id}>{f.name} ({f.department})</option>)}
+                    </select>
+                  </div>
+                  {selectedFacultyId ? (
+                    <div id="timetable-preview" className="bg-white p-6 rounded-2xl shadow-sm border border-gray-200 overflow-x-auto">
+                      <div className="mb-4 text-center">
+                        <h2 className="text-2xl font-black text-gray-800">Faculty Timetable</h2>
+                        <p className="text-gray-500 font-medium">Instructor: {faculties.find(f => f._id === selectedFacultyId)?.name}</p>
+                      </div>
+                      <table className="w-full text-left border-collapse min-w-[800px] text-xs">
+                        <thead>
+                          <tr>
+                            <th className="border border-gray-400 p-2 bg-gray-50 font-bold text-gray-700 text-center w-16">Days</th>
+                            <th className="border border-gray-400 p-2 bg-white font-bold text-center"><div className="flex flex-col"><span>8:00 to</span><span>9:00 AM</span></div></th>
+                            <th className="border border-gray-400 p-2 bg-white font-bold text-center"><div className="flex flex-col"><span>9:00 to</span><span>10:00 AM</span></div></th>
+                            <th className="border border-gray-400 p-2 bg-white font-bold text-center"><div className="flex flex-col"><span>10:00 AM</span><span>10:30 AM</span></div></th>
+                            <th className="border border-gray-400 p-2 bg-white font-bold text-center"><div className="flex flex-col"><span>10:30 to</span><span>11:30 AM</span></div></th>
+                            <th className="border border-gray-400 p-2 bg-white font-bold text-center"><div className="flex flex-col"><span>11:30 to</span><span>12:30 PM</span></div></th>
+                            <th className="border border-gray-400 p-2 bg-white font-bold text-center"><div className="flex flex-col"><span>12:30 to</span><span>1:30 PM</span></div></th>
+                            <th className="border border-gray-400 p-2 bg-white font-bold text-center"><div className="flex flex-col"><span>1:30 to</span><span>2:30 PM</span></div></th>
+                            <th className="border border-gray-400 p-2 bg-white font-bold text-center"><div className="flex flex-col"><span>2:30 to</span><span>3:30 PM</span></div></th>
+                            <th className="border border-gray-400 p-2 bg-white font-bold text-center"><div className="flex flex-col"><span>3:30 to</span><span>4:30 PM</span></div></th>
+                            <th className="border border-gray-400 p-2 bg-white font-bold text-center"><div className="flex flex-col"><span>4:30 to</span><span>5:00 PM</span></div></th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'].map((day, dayIndex) => {
+                            const daySlots = [
+                              { time: '08:00', type: 'class' },
+                              { time: '09:00', type: 'class' },
+                              { type: 'break', label: 'T E A   B R E A K' },
+                              { time: '10:30', type: 'class' },
+                              { time: '11:30', type: 'class' },
+                              { time: '12:30', type: 'class' },
+                              { type: 'break', label: 'L U N C H   B R E A K' },
+                              { time: '14:30', type: 'class' },
+                              { time: '15:30', type: 'class' },
+                              { time: '16:30', type: 'class' }
+                            ];
+                            
+                            let skipNext = false;
+                            const grid = getFacultyGrid(selectedFacultyId);
+
+                            return (
+                              <tr key={day}>
+                                <td className="border border-gray-400 p-2 font-bold text-gray-800 bg-gray-50 text-center">{day.substring(0,3)}</td>
+                                {daySlots.map((slot, index) => {
+                                  if (slot.type === 'break') {
+                                    if (dayIndex === 0) {
+                                      return <td key={index} rowSpan="6" className="border border-gray-400 bg-white text-center text-[10px] font-bold tracking-[0.2em]" style={{ writingMode: 'vertical-rl', textOrientation: 'upright' }}>{slot.label}</td>;
+                                    }
+                                    return null;
+                                  }
+
+                                  if (skipNext) {
+                                    skipNext = false;
+                                    return null;
+                                  }
+
+                                  const cell = grid[day][slot.time];
+                                  
+                                  if (!cell) {
+                                    return <td key={index} className="border border-gray-400 p-1 bg-white text-center text-gray-300"></td>;
+                                  }
+
+                                  const isLab = !!cell.batch;
+                                  const colSpan = isLab ? 2 : 1;
+                                  if (isLab) skipNext = true;
+
+                                  return (
+                                    <td key={index} colSpan={colSpan} className={`border border-gray-400 p-1 text-center align-middle ${isLab ? 'bg-indigo-50' : 'bg-white'}`}>
+                                      <div className="font-bold text-[11px] text-gray-800">
+                                        {cell.subject?.subjectCode || cell.subject?.subjectName}
+                                      </div>
+                                      <div className="text-[10px] text-gray-600 mt-1">
+                                        Room: {cell.room?.roomNumber || 'TBD'}
+                                      </div>
+                                      <div className="text-[9px] text-indigo-600 font-bold mt-0.5">
+                                        {cell.divisionName} {cell.batch ? `(${cell.batch.batchName})` : ''}
+                                      </div>
+                                    </td>
+                                  );
+                                })}
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  ) : (
+                    <p className="text-center text-gray-400 py-10 bg-white rounded-xl border border-gray-200 text-xs">Please select a faculty member to view their schedule.</p>
+                  )}
+                </div>
+              )}
+
+
              </div>
           ) : (
             <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">

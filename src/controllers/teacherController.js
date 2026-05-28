@@ -6,6 +6,60 @@ const Teacher = require('../models/Teacher');
 exports.getTeachers = async (req, res) => {
   try {
     const teachers = await Teacher.find().populate('user', 'name email');
+    
+    // Check if semester is provided to compute dynamic workloads
+    if (req.query.semester) {
+      const semester = parseInt(req.query.semester);
+      if (!isNaN(semester)) {
+        const Timetable = require('../models/Timetable');
+        const activeTimetables = await Timetable.find();
+        
+        const isCurrentOdd = semester % 2 !== 0;
+        const sameParityTimetables = activeTimetables.filter(t => {
+          const isOdd = t.semester % 2 !== 0;
+          return isOdd === isCurrentOdd;
+        });
+
+        const timeToMinutes = (time) => {
+          if (!time) return 0;
+          const [hrs, mins] = time.split(':').map(Number);
+          return hrs * 60 + mins;
+        };
+
+        const teachersJSON = teachers.map(t => {
+          const tObj = t.toJSON();
+          
+          // Calculate dynamic workload for this teacher in the same parity cycle
+          let dynamicWorkload = 0;
+          sameParityTimetables.forEach(tt => {
+            if (tt.generatedSchedule && Array.isArray(tt.generatedSchedule)) {
+              tt.generatedSchedule.forEach(entry => {
+                const hasFaculty = Array.isArray(entry.faculty)
+                  ? entry.faculty.some(f => f.toString() === tObj._id.toString())
+                  : entry.faculty && entry.faculty.toString() === tObj._id.toString();
+                  
+                if (hasFaculty) {
+                  const duration = entry.endTime && entry.startTime
+                    ? (timeToMinutes(entry.endTime) - timeToMinutes(entry.startTime)) / 60
+                    : (entry.batch ? 2 : 1);
+                  dynamicWorkload += duration;
+                }
+              });
+            }
+          });
+          
+          tObj.currentWorkload = dynamicWorkload;
+          return tObj;
+        });
+
+        return res.status(200).json({
+          success: true,
+          count: teachersJSON.length,
+          data: teachersJSON,
+        });
+      }
+    }
+
     res.status(200).json({
       success: true,
       count: teachers.length,

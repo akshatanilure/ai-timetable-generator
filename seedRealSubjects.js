@@ -100,17 +100,29 @@ const run = async () => {
     for (let name of teacherNames) {
       if (name === '—') continue;
       const t = await Teacher.findOne({ name });
+      
+      let dept = 'CSE';
+      const nameLower = name.toLowerCase();
+      if (nameLower.includes('basti') || nameLower.includes('varsha') || nameLower.includes('shivalli') || nameLower.includes('basavaraj h') || nameLower.includes('preti') || nameLower.includes('jennifer') || nameLower.includes('prakash')) {
+        dept = 'Maths';
+      } else if (nameLower.includes('bahubali') || nameLower.includes('madani') || nameLower.includes('malathi')) {
+        dept = 'Physics';
+      } else if (nameLower.includes('priyanka') || nameLower.includes('asma') || nameLower.includes('sahana')) {
+        dept = 'Chemistry';
+      }
+
       if (!t) {
         idx++;
         await Teacher.create({
           name,
           email: `teacher${idx}_${Date.now()}@college.edu`,
-          department: 'CSE',
+          department: dept,
           subjectsHandled: subjectsRaw.filter(s => s.inst === name).map(s => s.title),
           maxWorkloadPerWeek: 30
         });
       } else {
         await Teacher.findByIdAndUpdate(t._id, {
+          department: dept,
           $addToSet: { subjectsHandled: { $each: subjectsRaw.filter(s => s.inst === name).map(s => s.title) } }
         });
       }

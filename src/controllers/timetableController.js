@@ -162,7 +162,7 @@ exports.generateTimetable = async (req, res) => {
 // @access  Private (Admin)
 exports.generateTimetableML = async (req, res) => {
   try {
-    const { semester, branch, facultyMapping, divisions, facultyMaxWorkloads, fixedTimings } = req.body;
+    const { semester, branch, facultyMapping, divisions, facultyMaxWorkloads, fixedTimings, labsConfig } = req.body;
 
     // 1. Gather all data from MongoDB exactly like the normal generator
     const teachers = await Teacher.find();
@@ -174,16 +174,69 @@ exports.generateTimetableML = async (req, res) => {
       return res.status(400).json({ success: false, error: 'No subjects found for the given criteria' });
     }
 
+    // Dynamic same-parity workload calculation for ML generation
+    const semesterVal = parseInt(semester) || 1;
+    const isCurrentOdd = semesterVal % 2 !== 0;
+    const Timetable = require('../models/Timetable');
+    const activeTimetables = await Timetable.find();
+    
+    const sameParityTimetables = activeTimetables.filter(t => {
+      const isOdd = t.semester % 2 !== 0;
+      return isOdd === isCurrentOdd;
+    });
+
+    const timeToMinutes = (time) => {
+      if (!time) return 0;
+      const [hrs, mins] = time.split(':').map(Number);
+      return hrs * 60 + mins;
+    };
+
+    const teachersJSON = teachers.map(t => {
+      const tObj = t.toJSON();
+      
+      let dynamicWorkload = 0;
+      sameParityTimetables.forEach(tt => {
+        if (tt.generatedSchedule && Array.isArray(tt.generatedSchedule)) {
+          tt.generatedSchedule.forEach(entry => {
+            const hasFaculty = Array.isArray(entry.faculty)
+              ? entry.faculty.some(f => f.toString() === tObj._id.toString())
+              : entry.faculty && entry.faculty.toString() === tObj._id.toString();
+              
+            if (hasFaculty) {
+              const duration = entry.endTime && entry.startTime
+                ? (timeToMinutes(entry.endTime) - timeToMinutes(entry.startTime)) / 60
+                : (entry.batch ? 2 : 1);
+              dynamicWorkload += duration;
+            }
+          });
+        }
+      });
+      
+      tObj.currentWorkload = dynamicWorkload;
+      return tObj;
+    });
+
+    const adjustedMaxWorkloads = { ...(facultyMaxWorkloads || {}) };
+    for (const teacher of teachersJSON) {
+      const tId = teacher._id.toString();
+      const currentLimit = facultyMaxWorkloads && facultyMaxWorkloads[tId] !== undefined ? facultyMaxWorkloads[tId] : teacher.maxWorkloadPerWeek;
+      adjustedMaxWorkloads[tId] = Math.max(0, currentLimit - teacher.currentWorkload);
+    }
+
     // 2. Format the payload to send to Python
     const payload = {
       subjects,
-      teachers,
+      teachers: teachersJSON.map(t => ({
+        ...t,
+        maxWorkloadPerWeek: adjustedMaxWorkloads[t._id.toString()]
+      })),
       rooms,
       constraints: constraints || {},
       facultyMapping: facultyMapping || {},
       divisions: divisions || [{ name: 'DIV-A', strength: 60 }],
-      facultyMaxWorkloads: facultyMaxWorkloads || {},
-      fixedTimings: fixedTimings || {}
+      facultyMaxWorkloads: adjustedMaxWorkloads,
+      fixedTimings: fixedTimings || {},
+      labsConfig: labsConfig || []
     };
 
     // 3. Make HTTP request to the Python FastAPI microservice
@@ -197,7 +250,8 @@ exports.generateTimetableML = async (req, res) => {
     });
 
     if (!pythonResponse.ok) {
-      throw new Error(`Python engine responded with status: ${pythonResponse.status}`);
+      const errorText = await pythonResponse.text();
+      throw new Error(`Python engine responded with status: ${pythonResponse.status} - ${errorText}`);
     }
 
     const mlData = await pythonResponse.json();
@@ -213,8 +267,8 @@ exports.generateTimetableML = async (req, res) => {
     console.error("ML Engine Error:", error);
     res.status(500).json({ 
       success: false, 
-      error: 'Failed to communicate with Python ML Engine. Is it running on port 8000?',
-      details: error.message 
+      error: error.message.includes('fetch') ? 'Failed to connect to Python ML Engine. Is it running on port 8000?' : error.message,
+      details: error.stack
     });
   }
 };
@@ -238,14 +292,47 @@ exports.saveTimetableML = async (req, res) => {
            divisionName: divName,
            semester,
            department: branch || 'CSE',
-           totalStudents: 60
+           strength: 60
          });
       }
       
+      const Batch = require('../models/Batch');
+      const formattedSchedule = [];
+      for (const entry of schedule) {
+        let batchId = undefined;
+        if (entry.batch && entry.batch.batchName) {
+           let batch = await Batch.findOne({ batchName: entry.batch.batchName, division: div._id });
+           if (!batch) {
+               // Calculate a fallback student count
+               const fallbackCount = Math.max(1, Math.ceil((div.strength || 60) / 3));
+               batch = await Batch.create({ batchName: entry.batch.batchName, division: div._id, studentCount: fallbackCount });
+           }
+           batchId = batch._id;
+        }
+
+        let roomId = undefined;
+        if (entry.room && entry.room._id) {
+            const mongoose = require('mongoose');
+            if (mongoose.Types.ObjectId.isValid(entry.room._id)) {
+                roomId = entry.room._id;
+            }
+        }
+
+        formattedSchedule.push({
+          day: entry.day,
+          startTime: entry.startTime,
+          endTime: entry.endTime,
+          subject: entry.subject._id,
+          faculty: entry.faculty.map(f => f._id),
+          room: roomId,
+          batch: batchId
+        });
+      }
+
       const timetable = await Timetable.create({
         semester,
         division: div._id,
-        generatedSchedule: schedule,
+        generatedSchedule: formattedSchedule,
         createdBy: req.user.id
       });
       saved.push(timetable);
@@ -253,7 +340,8 @@ exports.saveTimetableML = async (req, res) => {
     
     res.status(201).json({ success: true, data: saved });
   } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
+    console.error("SAVE ML ERROR:", error);
+    res.status(500).json({ success: false, error: error.message, details: error.errors });
   }
 };
 

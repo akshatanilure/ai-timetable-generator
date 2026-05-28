@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import api from '../services/api';
 import TimetableGrid from '../components/TimetableGrid';
-import { FiFilter, FiDownload, FiRefreshCw, FiAlertTriangle } from 'react-icons/fi';
+import { FiFilter, FiDownload, FiRefreshCw, FiAlertTriangle, FiTrash2 } from 'react-icons/fi';
 
 const Timetables = () => {
   const [timetables, setTimetables] = useState([]);
@@ -9,9 +9,7 @@ const Timetables = () => {
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
 
-  useEffect(() => {
-    fetchTimetables();
-  }, [fetchTimetables]);
+
 
   const fetchTimetableDetails = useCallback(async (id) => {
     setLoading(true);
@@ -38,6 +36,24 @@ const Timetables = () => {
       setLoading(false);
     }
   }, [fetchTimetableDetails]);
+
+  useEffect(() => {
+    fetchTimetables();
+  }, [fetchTimetables]);
+
+  const handleDelete = async () => {
+    if (!selectedTimetable) return;
+    if (!window.confirm('Are you sure you want to delete this timetable? This action cannot be undone.')) return;
+    
+    try {
+      await api.delete(`/timetables/${selectedTimetable._id}`);
+      alert('Timetable deleted successfully!');
+      setSelectedTimetable(null);
+      fetchTimetables();
+    } catch (err) {
+      alert(err.response?.data?.error || 'Failed to delete timetable');
+    }
+  };
 
   const handleGenerate = async () => {
     if (!window.confirm('Generate new timetable for Semester 1?')) return;
@@ -98,6 +114,7 @@ const Timetables = () => {
                   onChange={(e) => fetchTimetableDetails(e.target.value)}
                   value={selectedTimetable?._id || ''}
                 >
+                  <option value="">-- Select --</option>
                   {timetables.map(t => (
                     <option key={t._id} value={t._id}>
                       Sem {t.semester} - Div {t.division?.divisionName || 'A'}
@@ -105,6 +122,15 @@ const Timetables = () => {
                   ))}
                 </select>
               </div>
+
+              {selectedTimetable && (
+                <button 
+                  onClick={handleDelete}
+                  className="w-full mt-4 flex items-center justify-center px-4 py-2 bg-red-50 text-red-600 border border-red-200 rounded-lg shadow-sm hover:bg-red-100 transition-all font-bold text-xs"
+                >
+                  <FiTrash2 className="mr-2" /> Delete Timetable
+                </button>
+              )}
             </div>
           </div>
 

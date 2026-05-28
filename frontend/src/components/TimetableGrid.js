@@ -41,7 +41,7 @@ const TimetableGrid = ({ schedule }) => {
     if (!session.subject) return;
     const code = session.subject.subjectCode || 'TBD';
     const facNames = Array.isArray(session.faculty) 
-      ? session.faculty.map(f => f.name).join(' & ') 
+      ? session.faculty.map(f => f?.name || 'Unknown').join(' & ') 
       : session.faculty?.name || 'TBD';
 
     if (!uniqueSubjectsMap.has(code)) {
@@ -120,22 +120,45 @@ const TimetableGrid = ({ schedule }) => {
                     const span = getSlotSpan(sessions[0]);
                     skipSlots[day] = span - 1;
                     
+                    const isLabGroup = sessions.length > 1 || (sessions[0].batch && sessions[0].batch.batchName);
+                    
                     return (
                       <td 
                         key={slotIndex} 
                         colSpan={span} 
                         className="border border-gray-400 p-2 text-center align-middle hover:bg-blue-50 transition-colors"
                       >
-                        <div className="flex flex-col items-center justify-center gap-1">
-                          {sessions.map((s, idx) => (
-                            <React.Fragment key={idx}>
-                              <span className="font-semibold text-gray-800">
-                                {s.subject?.subjectCode || s.subject?.subjectName}
-                                {s.room ? ` (R N ${s.room.roomNumber.replace('R', '')})` : ''}
-                              </span>
-                              {idx < sessions.length - 1 && <span className="text-gray-400 my-1 border-b border-gray-300 w-full block"></span>}
-                            </React.Fragment>
-                          ))}
+                        <div className="flex flex-col items-center justify-center gap-1 text-xs">
+                          {isLabGroup ? (
+                            <>
+                               <span className="font-bold text-gray-800">
+                                  {sessions.map(s => {
+                                    const code = s.subject?.subjectCode || s.subject?.subjectName || '';
+                                    const bName = s.batch?.batchName;
+                                    return bName ? `${code}(${bName})` : code;
+                                  }).join('/')}
+                               </span>
+                            </>
+                          ) : (
+                            sessions.map((s, idx) => (
+                              <React.Fragment key={idx}>
+                                <span className="font-bold text-gray-800 text-sm">
+                                  {s.subject?.subjectCode || s.subject?.subjectName}
+                                </span>
+                                {s.room && s.room.roomNumber && (
+                                  <span className="text-gray-600 font-semibold">
+                                    (R N {s.room.roomNumber.replace('R', '')})
+                                  </span>
+                                )}
+                                {s.faculty && (Array.isArray(s.faculty) ? s.faculty[0]?.name : s.faculty.name) && (
+                                  <span className="text-gray-500 italic mt-0.5">
+                                    {Array.isArray(s.faculty) ? s.faculty[0]?.name : s.faculty.name}
+                                  </span>
+                                )}
+                                {idx < sessions.length - 1 && <span className="text-gray-400 my-1 border-b border-gray-300 w-full block"></span>}
+                              </React.Fragment>
+                            ))
+                          )}
                         </div>
                       </td>
                     );
