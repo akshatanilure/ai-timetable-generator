@@ -18,14 +18,7 @@ import StudentDashboard from './pages/StudentDashboard';
 import GenerateTimetable from './pages/GenerateTimetable';
 import Constraints from './pages/Constraints';
 import Settings from './pages/Settings';
-
-// Placeholder Pages
-const Infrastructure = () => (
-  <div className="bg-white p-12 rounded-3xl shadow-sm border border-dashed border-gray-200 text-center">
-    <h2 className="text-2xl font-bold text-gray-700">Infrastructure Management</h2>
-    <p className="text-gray-400 mt-2">Module coming soon: Manage classrooms, lab equipment, and department blocks.</p>
-  </div>
-);
+import Infrastructure from './pages/Infrastructure';
 
 const DashboardSelector = () => {
   const { user } = useAuth();

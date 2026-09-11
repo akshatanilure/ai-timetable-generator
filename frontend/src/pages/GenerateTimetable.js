@@ -378,74 +378,18 @@ const GenerateTimetable = () => {
        const isMath = subNameLower.includes('math') || subNameLower.includes('mats') || subCodeLower.includes('mat') || subCodeLower.includes('mac') || subDeptLower.includes('math');
        const isPhysics = subNameLower.includes('physics') || subNameLower.includes('phys') || subCodeLower.includes('phy') || subDeptLower.includes('physics') || subDeptLower.includes('phys');
        const isChemistry = subNameLower.includes('chemistry') || subNameLower.includes('chem') || subCodeLower.includes('che') || subDeptLower.includes('chemistry') || subDeptLower.includes('chem');
+       const isElectrical = subNameLower.includes('electrical') || subNameLower.includes('electronics') || subCodeLower.includes('ee1') || subCodeLower.includes('esc142') || subCodeLower.includes('esc243') || subCodeLower.includes('eee') || subCodeLower.includes('ece') || subDeptLower.includes('elect') || subDeptLower.includes('eee');
 
        if (isMath) {
-         filteredFaculties = faculties.filter(f => {
-           const nameLower = (f.name || '').toLowerCase();
-           const deptLower = (f.department || '').toLowerCase();
-           return deptLower.includes('math') || 
-                  nameLower.includes('basavaraj') ||
-                  nameLower.includes('varsha') ||
-                  nameLower.includes('preti') ||
-                  nameLower.includes('jennifer') ||
-                  nameLower.includes('prakash') ||
-                  nameLower.includes('basti') ||
-                  nameLower.includes('shivalli') ||
-                  (f.subjectsHandled || []).some(s => s.toLowerCase().includes('math') || s.toLowerCase().includes('mats'));
-         });
+         filteredFaculties = faculties.filter(f => (f.department || '').toLowerCase().includes('math'));
        } else if (isPhysics) {
-         filteredFaculties = faculties.filter(f => {
-           const nameLower = (f.name || '').toLowerCase();
-           const deptLower = (f.department || '').toLowerCase();
-           return deptLower.includes('physics') || deptLower.includes('phys') || 
-                  nameLower.includes('bahubali') ||
-                  nameLower.includes('kumar madani') ||
-                  nameLower.includes('malathi') ||
-                  (f.subjectsHandled || []).some(s => s.toLowerCase().includes('physics') || s.toLowerCase().includes('phys'));
-         });
+         filteredFaculties = faculties.filter(f => (f.department || '').toLowerCase().includes('phys'));
        } else if (isChemistry) {
-         filteredFaculties = faculties.filter(f => {
-           const nameLower = (f.name || '').toLowerCase();
-           const deptLower = (f.department || '').toLowerCase();
-           return deptLower.includes('chemistry') || deptLower.includes('chem') || 
-                  nameLower.includes('asma') ||
-                  nameLower.includes('sahana') ||
-                  nameLower.includes('priyanka') ||
-                  (f.subjectsHandled || []).some(s => s.toLowerCase().includes('chemistry') || s.toLowerCase().includes('chem'));
-         });
+         filteredFaculties = faculties.filter(f => (f.department || '').toLowerCase().includes('chem') || (f.department || '').toLowerCase().includes('chemistry'));
+       } else if (isElectrical) {
+         filteredFaculties = faculties.filter(f => (f.department || '').toLowerCase().includes('elect') || (f.department || '').toLowerCase().includes('eee'));
        } else {
-         // Rest of the subjects: ONLY the specific 22 Computer Science (CSE) faculty should appear
-         filteredFaculties = faculties.filter(f => {
-           const nameLower = (f.name || '').toLowerCase();
-           const deptLower = (f.department || '').toLowerCase();
-           return (deptLower === 'cse' || deptLower.includes('computer')) && (
-             nameLower.includes('umakant') ||
-             nameLower.includes('shrihari') ||
-             nameLower.includes('jayateerth') ||
-             nameLower.includes('vadavi') ||
-             nameLower.includes('raghavendra') ||
-             nameLower.includes('shrinivas') ||
-             nameLower.includes('nita') ||
-             nameLower.includes('vidyagouri') ||
-             nameLower.includes('ranganath') ||
-             nameLower.includes('yadawad') ||
-             nameLower.includes('anand') ||
-             nameLower.includes('pashupatimath') ||
-             nameLower.includes('archana') ||
-             nameLower.includes('shreedhar') ||
-             nameLower.includes('sandhya') ||
-             nameLower.includes('prathap') ||
-             nameLower.includes('basavaraj vad') ||
-             nameLower.includes('govind') ||
-             nameLower.includes('smitesh') ||
-             nameLower.includes('smilesh') || // alias support
-             nameLower.includes('sharada') ||
-             nameLower.includes('indira') ||
-             nameLower.includes('rani') ||
-             nameLower.includes('rashmi') ||
-             nameLower.includes('yashodha')
-           );
-         });
+         filteredFaculties = faculties.filter(f => (f.department || '').toLowerCase().includes('cse') || (f.department || '').toLowerCase().includes('computer'));
        }
      }
          
@@ -687,7 +631,7 @@ const GenerateTimetable = () => {
                                  onChange={e => handleFixedTimingChange(div.name, subject._id, i, 'time', e.target.value)}
                                >
                                  <option value="">Time</option>
-                                 {["08:00", "09:00", "10:30", "11:30", "12:30", "14:30", "15:30", "16:30"].map(t => <option key={t} value={t}>{t}</option>)}
+                                 {["08:00", "09:00", "10:30", "11:30", "14:30", "15:30"].map(t => <option key={t} value={t}>{t}</option>)}
                                </select>
                             </div>
                           ))}
@@ -718,7 +662,7 @@ const GenerateTimetable = () => {
                      </select>
                      <select className="min-w-0 p-2 bg-gray-50 border border-gray-200 rounded text-xs flex-1 outline-none" value={selectedFixTime} onChange={e => setSelectedFixTime(e.target.value)}>
                        <option value="">Time</option>
-                       {["08:00", "09:00", "10:30", "11:30", "12:30", "14:30", "15:30", "16:30"].map(t => <option key={t} value={t}>{t}</option>)}
+                       {["08:00", "09:00", "10:30", "11:30", "14:30", "15:30"].map(t => <option key={t} value={t}>{t}</option>)}
                      </select>
                    </div>
                    <button onClick={addFixedTiming} className="bg-gray-600 hover:bg-gray-700 text-white px-3 py-2 rounded text-xs font-bold transition-colors">Add Custom Slot</button>
@@ -824,11 +768,9 @@ const GenerateTimetable = () => {
                           <th className="border border-gray-400 p-2 bg-white font-bold text-center"><div className="flex flex-col"><span>10:00 AM</span><span>10:30 AM</span></div></th>
                           <th className="border border-gray-400 p-2 bg-white font-bold text-center"><div className="flex flex-col"><span>10:30 to</span><span>11:30 AM</span></div></th>
                           <th className="border border-gray-400 p-2 bg-white font-bold text-center"><div className="flex flex-col"><span>11:30 to</span><span>12:30 PM</span></div></th>
-                          <th className="border border-gray-400 p-2 bg-white font-bold text-center"><div className="flex flex-col"><span>12:30 to</span><span>1:30 PM</span></div></th>
-                          <th className="border border-gray-400 p-2 bg-white font-bold text-center"><div className="flex flex-col"><span>1:30 to</span><span>2:30 PM</span></div></th>
+                          <th className="border border-gray-400 p-2 bg-white font-bold text-center"><div className="flex flex-col"><span>12:30 to</span><span>2:30 PM</span></div></th>
                           <th className="border border-gray-400 p-2 bg-white font-bold text-center"><div className="flex flex-col"><span>2:30 to</span><span>3:30 PM</span></div></th>
                           <th className="border border-gray-400 p-2 bg-white font-bold text-center"><div className="flex flex-col"><span>3:30 to</span><span>4:30 PM</span></div></th>
-                          <th className="border border-gray-400 p-2 bg-white font-bold text-center"><div className="flex flex-col"><span>4:30 to</span><span>5:00 PM</span></div></th>
                         </tr>
                       </thead>
                       <tbody>
@@ -839,11 +781,9 @@ const GenerateTimetable = () => {
                             { type: 'break', label: 'T E A   B R E A K' },
                             { time: '10:30', type: 'class' },
                             { time: '11:30', type: 'class' },
-                            { time: '12:30', type: 'class' },
                             { type: 'break', label: 'L U N C H   B R E A K' },
                             { time: '14:30', type: 'class' },
-                            { time: '15:30', type: 'class' },
-                            { time: '16:30', type: 'class' }
+                            { time: '15:30', type: 'class' }
                           ];
                           
                           let skipNext = false;
@@ -981,11 +921,9 @@ const GenerateTimetable = () => {
                             <th className="border border-gray-400 p-2 bg-white font-bold text-center"><div className="flex flex-col"><span>10:00 AM</span><span>10:30 AM</span></div></th>
                             <th className="border border-gray-400 p-2 bg-white font-bold text-center"><div className="flex flex-col"><span>10:30 to</span><span>11:30 AM</span></div></th>
                             <th className="border border-gray-400 p-2 bg-white font-bold text-center"><div className="flex flex-col"><span>11:30 to</span><span>12:30 PM</span></div></th>
-                            <th className="border border-gray-400 p-2 bg-white font-bold text-center"><div className="flex flex-col"><span>12:30 to</span><span>1:30 PM</span></div></th>
-                            <th className="border border-gray-400 p-2 bg-white font-bold text-center"><div className="flex flex-col"><span>1:30 to</span><span>2:30 PM</span></div></th>
+                            <th className="border border-gray-400 p-2 bg-white font-bold text-center"><div className="flex flex-col"><span>12:30 to</span><span>2:30 PM</span></div></th>
                             <th className="border border-gray-400 p-2 bg-white font-bold text-center"><div className="flex flex-col"><span>2:30 to</span><span>3:30 PM</span></div></th>
                             <th className="border border-gray-400 p-2 bg-white font-bold text-center"><div className="flex flex-col"><span>3:30 to</span><span>4:30 PM</span></div></th>
-                            <th className="border border-gray-400 p-2 bg-white font-bold text-center"><div className="flex flex-col"><span>4:30 to</span><span>5:00 PM</span></div></th>
                           </tr>
                         </thead>
                         <tbody>
@@ -996,11 +934,9 @@ const GenerateTimetable = () => {
                               { type: 'break', label: 'T E A   B R E A K' },
                               { time: '10:30', type: 'class' },
                               { time: '11:30', type: 'class' },
-                              { time: '12:30', type: 'class' },
                               { type: 'break', label: 'L U N C H   B R E A K' },
                               { time: '14:30', type: 'class' },
-                              { time: '15:30', type: 'class' },
-                              { time: '16:30', type: 'class' }
+                              { time: '15:30', type: 'class' }
                             ];
                             
                             let skipNext = false;

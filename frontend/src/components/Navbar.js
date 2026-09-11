@@ -60,10 +60,31 @@ const Navbar = ({ toggleSidebar }) => {
 
   // If guest, show the Landing Page Navbar
   return (
-    <header className="flex items-center justify-between px-8 py-6 bg-transparent absolute top-0 left-0 right-0 z-50">
-      <Link to="/" className="text-2xl font-black text-white flex items-center tracking-tighter">
-        <span className="bg-teal-500 text-black px-2 py-1 rounded-lg mr-2">AI</span>
-        TIMETABLE
+    <header className="flex items-center justify-between px-8 py-6 bg-transparent absolute top-0 left-0 right-0 z-50 print:hidden">
+      <Link to="/" className="text-2xl font-bold text-white flex items-center tracking-tight">
+        <svg width="34" height="34" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg" className="mr-3 filter drop-shadow-[0_0_8px_rgba(0,242,254,0.5)]">
+          <defs>
+            <linearGradient id="cyberGradNav" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stopColor="#00f2fe" />
+              <stop offset="50%" stopColor="#7f00ff" />
+              <stop offset="100%" stopColor="#ff007f" />
+            </linearGradient>
+            <filter id="neonGlowNav" x="-20%" y="-20%" width="140%" height="140%">
+              <feGaussianBlur stdDeviation="2.5" result="blur" />
+              <feComposite in="SourceGraphic" in2="blur" operator="over" />
+            </filter>
+          </defs>
+          <circle cx="50" cy="50" r="44" stroke="url(#cyberGradNav)" strokeWidth="3" strokeDasharray="8 6" opacity="0.4" />
+          <circle cx="50" cy="50" r="36" stroke="url(#cyberGradNav)" strokeWidth="2.5" opacity="0.8" />
+          <path d="M50 16 C 50 30, 30 50, 20 50 C 30 50, 50 70, 50 84 C 50 70, 70 50, 80 50 C 70 50, 50 30, 50 16 Z" stroke="url(#cyberGradNav)" strokeWidth="2" strokeLinejoin="round" opacity="0.55" />
+          <path d="M50 50 L72 32" stroke="url(#cyberGradNav)" strokeWidth="6" strokeLinecap="round" filter="url(#neonGlowNav)" />
+          <path d="M50 50 L32 62" stroke="url(#cyberGradNav)" strokeWidth="4" strokeLinecap="round" opacity="0.75" />
+          <circle cx="50" cy="50" r="9" fill="url(#cyberGradNav)" filter="url(#neonGlowNav)" />
+          <circle cx="72" cy="32" r="5.5" fill="#ff007f" />
+          <circle cx="32" cy="62" r="4.5" fill="#00f2fe" />
+          <circle cx="50" cy="16" r="4.5" fill="#7f00ff" />
+        </svg>
+        <span className="text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-blue-500 font-extrabold mr-1.5">AI</span> Timetable
       </Link>
 
       <nav className="hidden md:flex items-center space-x-8">

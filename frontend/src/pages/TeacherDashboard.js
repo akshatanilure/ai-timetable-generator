@@ -25,21 +25,18 @@ const TeacherDashboard = () => {
         setTeachers(teachersRes.data.data);
         
         if (isTeacher) {
-          // Find matching teacher record by user reference or name
-          const currentTeacher = teachersRes.data.data.find(t => 
-            t.user?._id === user?._id || t.user === user?._id
-          );
+          // Find matching teacher record by user reference, email, or name
+          const currentTeacher = teachersRes.data.data.find(t => {
+            const userMatch = (t.user?._id || t.user) === user?._id;
+            const emailMatch = t.email && user?.email && t.email.toLowerCase() === user.email.toLowerCase();
+            const nameMatch = t.name && user?.name && (
+              t.name.toLowerCase().includes(user.name.toLowerCase()) || 
+              user.name.toLowerCase().includes(t.name.toLowerCase())
+            );
+            return userMatch || emailMatch || nameMatch;
+          });
           if (currentTeacher) {
             setSelectedTeacherId(currentTeacher._id);
-          } else {
-            // Name matching fallback
-            const nameMatch = teachersRes.data.data.find(t => 
-              t.name.toLowerCase().includes(user?.name?.toLowerCase()) || 
-              user?.name?.toLowerCase().includes(t.name.toLowerCase())
-            );
-            if (nameMatch) {
-              setSelectedTeacherId(nameMatch._id);
-            }
           }
         }
         

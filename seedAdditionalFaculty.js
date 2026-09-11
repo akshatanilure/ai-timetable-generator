@@ -7,10 +7,12 @@ dotenv.config();
 
 const mathsFaculty = [
   'Dr. Basavaraj H',
-  'Dr. Varsha Joshi',
-  'Dr. Preti B J',
+  'Dr. D. P. Basti',
   'Dr. Jennifer Kernel',
-  'Dr. Prakash Badiger'
+  'Dr. Prakash Badiger',
+  'Dr. Preti B J',
+  'Dr. Shailaja Shivalli',
+  'Dr. Varsha Joshi'
 ];
 
 const physicsFaculty = [
@@ -21,21 +23,28 @@ const physicsFaculty = [
 
 const chemistryFaculty = [
   'Dr. Asma',
-  'Dr. Sahana'
+  'Dr. Sahana',
+  'Prof. Priyanka'
+];
+
+const electricalFaculty = [
+  'Prof. Sumangala Bhavikatti',
+  'Prof. Nandakumar C',
+  'Prof. Sanjeeth',
+  'Prof. Kavya K'
 ];
 
 const cseFaculty = [
   'Dr. Umakant P Kulkarni',
   'Dr. Shrihari M Joshi',
   'Prof. Jayateerth V Vadavi',
-  'Dr. Raghavendra G.S.',
+  'Dr. Raghavendra G. S.',
   'Dr. Shrinivas B. Kulkarni',
   'Prof. Nita G. Kulkarni',
   'Dr. Vidyagouri Kulkarni',
   'Dr. Ranganath G. Yadawad',
   'Prof. Anand Vaidya',
   'Prof. Anand Pashupatimath',
-  'Dr. Archana Nandibewoor',
   'Prof. Shreedhar G. Yadawad',
   'Prof. Sandhya S. V.',
   'Prof. Prathap Kumar M.K.',
@@ -46,7 +55,8 @@ const cseFaculty = [
   'Prof. Indira Umarji',
   'Prof. Rani R. Shetty',
   'Prof. Rashmi Patil',
-  'Prof. Yashodha A Sambrani'
+  'Prof. Yashodha A Sambrani',
+  'Dr. Shashikant Kurodi'
 ];
 
 const run = async () => {
@@ -112,11 +122,43 @@ const run = async () => {
     console.log('\n--- Computer Science Faculty ---');
     await processFaculty(cseFaculty, 'CSE');
 
-    // Clean up any remaining teachers that are not in these lists and move them to CSE or keep them?
-    // The user states "except maths chemistry and physics, for other subjects only these faculty list should appear".
-    // Let's print out all teachers currently in database to check.
+    console.log('\n--- Electrical Faculty ---');
+    await processFaculty(electricalFaculty, 'Electrical');
+
+    // Clean up any remaining teachers that are not in the seeded lists
+    const allTargetNames = [
+      ...mathsFaculty,
+      ...physicsFaculty,
+      ...chemistryFaculty,
+      ...electricalFaculty,
+      ...cseFaculty
+    ];
+    
+    const cleanTargetNames = allTargetNames.map(n => n.toLowerCase().replace(/^(dr|prof|mr|mrs|ms|asst)\s+/g, '').replace(/[\s\.\,\-\_]/g, ''));
+    
     const allTeachers = await Teacher.find({});
-    console.log(`\nTotal teachers in database: ${allTeachers.length}`);
+    let deleteCount = 0;
+    for (const t of allTeachers) {
+      const dbNormName = t.name.toLowerCase().replace(/^(dr|prof|mr|mrs|ms|asst)\s+/g, '').replace(/[\s\.\,\-\_]/g, '');
+      const isMatched = cleanTargetNames.some(targetNorm => {
+        if (targetNorm === dbNormName) return true;
+        // Check substring/alias
+        if (targetNorm.includes('umakant') && dbNormName.includes('upkulkarni')) return true;
+        if (targetNorm.includes('jayateerth') && dbNormName.includes('jvvadavi')) return true;
+        if (targetNorm.includes('sumangala') && dbNormName.includes('sumangalabavikatti')) return true;
+        if (targetNorm.includes('nandakumar') && dbNormName.includes('nankumar')) return true;
+        return false;
+      });
+      
+      if (!isMatched) {
+        await Teacher.deleteOne({ _id: t._id });
+        console.log(`[CLEANUP DELETED] ${t.name} -> ${t.department}`);
+        deleteCount++;
+      }
+    }
+    
+    const finalCount = await Teacher.countDocuments({});
+    console.log(`\nTotal teachers in database: ${finalCount} (Deleted ${deleteCount} unused)`);
     
     console.log('\nFaculty alignment complete!');
     process.exit(0);

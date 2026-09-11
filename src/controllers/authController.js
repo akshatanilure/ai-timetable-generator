@@ -1,4 +1,5 @@
 const User = require('../models/User');
+const Teacher = require('../models/Teacher');
 const generateToken = require('../utils/generateToken');
 
 // @desc    Register user
@@ -6,7 +7,7 @@ const generateToken = require('../utils/generateToken');
 // @access  Public
 exports.registerUser = async (req, res, next) => {
   try {
-    const { name, email, password, role } = req.body;
+    const { name, email, password, role, department, semester, division } = req.body;
 
     // Check if user exists
     const userExists = await User.findOne({ email });
@@ -23,16 +24,39 @@ exports.registerUser = async (req, res, next) => {
       name,
       email,
       password,
-      role,
+      role: role || 'student',
+      department,
+      semester,
+      division,
     });
 
     if (user) {
+      // If role is teacher, link or create Teacher record
+      if (user.role === 'teacher') {
+        const existingTeacher = await Teacher.findOne({ email: user.email.toLowerCase() });
+        if (existingTeacher) {
+          existingTeacher.user = user._id;
+          if (department) existingTeacher.department = department;
+          await existingTeacher.save();
+        } else {
+          await Teacher.create({
+            name: user.name,
+            email: user.email.toLowerCase(),
+            department: department || 'Computer Science',
+            user: user._id,
+          });
+        }
+      }
+
       res.status(201).json({
         success: true,
         _id: user._id,
         name: user.name,
         email: user.email,
         role: user.role,
+        department: user.department,
+        semester: user.semester,
+        division: user.division,
         token: generateToken(user._id),
       });
     } else {
@@ -66,6 +90,9 @@ exports.loginUser = async (req, res, next) => {
         name: user.name,
         email: user.email,
         role: user.role,
+        department: user.department,
+        semester: user.semester,
+        division: user.division,
         token: generateToken(user._id),
       });
     } else {

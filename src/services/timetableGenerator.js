@@ -22,9 +22,9 @@ class TimetableGenerator {
       college_start_time: "09:00",
       college_end_time: "16:30",
       period_duration: 60,
-      short_break_start: "11:00",
-      short_break_end: "11:30",
-      lunch_break_start: "13:30",
+      short_break_start: "10:00",
+      short_break_end: "10:30",
+      lunch_break_start: "12:30",
       lunch_break_end: "14:30"
     };
 

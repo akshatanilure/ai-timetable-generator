@@ -54,6 +54,10 @@ const subjectSchema = new mongoose.Schema(
       type: Boolean,
       default: false,
     },
+    isFullClassLab: {
+      type: Boolean,
+      default: false,
+    },
   },
   {
     timestamps: true,

@@ -4,11 +4,12 @@ const test = async () => {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        email: 'admin@example.com',
+        email: 'admin@college.edu',
         password: 'password123'
       })
     });
     const authData = await res.json();
+    console.log('Auth response:', authData);
     const token = authData.token;
     
     console.log('Got token:', token ? 'yes' : 'no');

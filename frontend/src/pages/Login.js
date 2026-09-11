@@ -56,10 +56,10 @@ const Login = () => {
           <Link to="/" className="flex items-center text-teal-500 hover:text-teal-400 mb-6 transition-colors">
             <FiArrowLeft className="mr-2" /> Back to Home
           </Link>
-          <h2 className="text-center text-4xl font-extrabold text-white tracking-tight">
+          <h2 className="text-center text-5xl font-extrabold text-white tracking-tight">
             {getRoleTitle()}
           </h2>
-          <p className="mt-4 text-center text-sm text-gray-400">
+          <p className="mt-4 text-center text-base text-gray-400">
             Enter your credentials to access your portal
           </p>
         </div>
@@ -67,22 +67,22 @@ const Login = () => {
         <form className="mt-8 space-y-6" onSubmit={handleSubmit}>
           <div className="space-y-4">
             <div className="relative">
-              <FiMail className="absolute left-4 top-4 text-gray-500" />
+              <FiMail className="absolute left-4 top-4.5 text-gray-500" size={18} />
               <input
                 type="email"
                 required
-                className="appearance-none rounded-xl relative block w-full px-12 py-4 bg-gray-800 border border-gray-700 placeholder-gray-500 text-white focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent transition-all sm:text-sm"
+                className="appearance-none rounded-xl relative block w-full px-12 py-4 bg-gray-800 border border-gray-700 placeholder-gray-500 text-white focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent transition-all text-base"
                 placeholder="Email address"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
               />
             </div>
             <div className="relative">
-              <FiLock className="absolute left-4 top-4 text-gray-500" />
+              <FiLock className="absolute left-4 top-4.5 text-gray-500" size={18} />
               <input
                 type="password"
                 required
-                className="appearance-none rounded-xl relative block w-full px-12 py-4 bg-gray-800 border border-gray-700 placeholder-gray-500 text-white focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent transition-all sm:text-sm"
+                className="appearance-none rounded-xl relative block w-full px-12 py-4 bg-gray-800 border border-gray-700 placeholder-gray-500 text-white focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent transition-all text-base"
                 placeholder="Password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
@@ -90,7 +90,7 @@ const Login = () => {
             </div>
           </div>
 
-          <div className="flex items-center justify-between text-sm">
+          <div className="flex items-center justify-between text-base">
             <div className="flex items-center">
               <input
                 id="remember-me"
@@ -111,7 +111,7 @@ const Login = () => {
             <button
               type="submit"
               disabled={loading}
-              className={`group relative w-full flex justify-center py-4 px-4 border border-transparent text-sm font-bold rounded-xl text-black bg-teal-500 hover:bg-teal-400 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-teal-500 transition-all ${
+              className={`group relative w-full flex justify-center py-4 px-4 border border-transparent text-base font-extrabold rounded-xl text-black bg-teal-500 hover:bg-teal-400 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-teal-500 transition-all ${
                 loading ? 'opacity-70 cursor-not-allowed scale-95' : 'hover:scale-[1.02]'
               }`}
             >
@@ -129,7 +129,7 @@ const Login = () => {
         </form>
 
         <div className="mt-6 text-center">
-          <p className="text-gray-400">
+          <p className="text-gray-400 text-base">
             Don't have an account?{' '}
             <Link to="/register" className="font-medium text-teal-500 hover:text-teal-400 transition-colors">
               Register here

@@ -19,17 +19,17 @@ const TimetableSettingSchema = new mongoose.Schema({
   short_break_start: {
     type: String,
     required: true,
-    default: "11:00"
+    default: "10:00"
   },
   short_break_end: {
     type: String,
     required: true,
-    default: "11:30"
+    default: "10:30"
   },
   lunch_break_start: {
     type: String,
     required: true,
-    default: "13:30"
+    default: "12:30"
   },
   lunch_break_end: {
     type: String,

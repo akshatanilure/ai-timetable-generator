@@ -1,0 +1,1099 @@
+{
+  "subjects": [
+    {
+      "_id": "6a17dbec6ab079895ccfc313",
+      "subjectCode": "22UCSC500",
+      "subjectName": "Software Engineering and Project Management",
+      "semester": 5,
+      "department": "CSE",
+      "branch": "CSE",
+      "lectureHours": 3,
+      "tutorialHours": 0,
+      "practicalHours": 0,
+      "credits": 3,
+      "subjectType": "project",
+      "priority": 1,
+      "elective": false,
+      "__v": 0,
+      "createdAt": "2026-05-28T06:08:44.246Z",
+      "updatedAt": "2026-05-28T06:08:44.246Z"
+    },
+    {
+      "_id": "6a17dbec6ab079895ccfc314",
+      "subjectCode": "22UCSC501",
+      "subjectName": "Database Management Systems",
+      "semester": 5,
+      "department": "CSE",
+      "branch": "CSE",
+      "lectureHours": 4,
+      "tutorialHours": 0,
+      "practicalHours": 0,
+      "credits": 4,
+      "subjectType": "theory",
+      "priority": 1,
+      "elective": false,
+      "__v": 0,
+      "createdAt": "2026-05-28T06:08:44.246Z",
+      "updatedAt": "2026-05-28T06:08:44.246Z"
+    },
+    {
+      "_id": "6a17dbec6ab079895ccfc315",
+      "subjectCode": "22UCSC502",
+      "subjectName": "Computer Networks",
+      "semester": 5,
+      "department": "CSE",
+      "branch": "CSE",
+      "lectureHours": 4,
+      "tutorialHours": 0,
+      "practicalHours": 0,
+      "credits": 4,
+      "subjectType": "theory",
+      "priority": 1,
+      "elective": false,
+      "__v": 0,
+      "createdAt": "2026-05-28T06:08:44.246Z",
+      "updatedAt": "2026-05-28T06:08:44.246Z"
+    },
+    {
+      "_id": "6a17dbec6ab079895ccfc316",
+      "subjectCode": "22UCSE521",
+      "subjectName": "Internet of Things",
+      "semester": 5,
+      "department": "CSE",
+      "branch": "CSE",
+      "lectureHours": 3,
+      "tutorialHours": 0,
+      "practicalHours": 2,
+      "credits": 4,
+      "subjectType": "theory",
+      "priority": 1,
+      "elective": false,
+      "__v": 0,
+      "createdAt": "2026-05-28T06:08:44.246Z",
+      "updatedAt": "2026-05-28T06:08:44.246Z"
+    },
+    {
+      "_id": "6a17dbec6ab079895ccfc317",
+      "subjectCode": "22UCSC523",
+      "subjectName": "Digital Image Processing",
+      "semester": 5,
+      "department": "CSE",
+      "branch": "CSE",
+      "lectureHours": 4,
+      "tutorialHours": 0,
+      "practicalHours": 0,
+      "credits": 4,
+      "subjectType": "theory",
+      "priority": 1,
+      "elective": false,
+      "__v": 0,
+      "createdAt": "2026-05-28T06:08:44.246Z",
+      "updatedAt": "2026-05-28T06:08:44.246Z"
+    },
+    {
+      "_id": "6a17dbec6ab079895ccfc318",
+      "subjectCode": "22UCSL503",
+      "subjectName": "Python Programming Laboratory",
+      "semester": 5,
+      "department": "CSE",
+      "branch": "CSE",
+      "lectureHours": 0,
+      "tutorialHours": 0,
+      "practicalHours": 2,
+      "credits": 1,
+      "subjectType": "lab",
+      "priority": 1,
+      "elective": false,
+      "__v": 0,
+      "createdAt": "2026-05-28T06:08:44.246Z",
+      "updatedAt": "2026-05-28T06:08:44.246Z"
+    },
+    {
+      "_id": "6a17dbec6ab079895ccfc319",
+      "subjectCode": "22UCSL504",
+      "subjectName": "Database Management Systems Laboratory",
+      "semester": 5,
+      "department": "CSE",
+      "branch": "CSE",
+      "lectureHours": 0,
+      "tutorialHours": 0,
+      "practicalHours": 2,
+      "credits": 1,
+      "subjectType": "lab",
+      "priority": 1,
+      "elective": false,
+      "__v": 0,
+      "createdAt": "2026-05-28T06:08:44.246Z",
+      "updatedAt": "2026-05-28T06:08:44.246Z"
+    },
+    {
+      "_id": "6a17dbec6ab079895ccfc31a",
+      "subjectCode": "22UCSL505",
+      "subjectName": "Minor Project – I",
+      "semester": 5,
+      "department": "CSE",
+      "branch": "CSE",
+      "lectureHours": 0,
+      "tutorialHours": 0,
+      "practicalHours": 4,
+      "credits": 2,
+      "subjectType": "project",
+      "priority": 1,
+      "elective": false,
+      "__v": 0,
+      "createdAt": "2026-05-28T06:08:44.246Z",
+      "updatedAt": "2026-05-28T06:08:44.246Z"
+    },
+    {
+      "_id": "6a17dbec6ab079895ccfc31b",
+      "subjectCode": "22URMK506",
+      "subjectName": "Research Methodology and IPR",
+      "semester": 5,
+      "department": "CSE",
+      "branch": "CSE",
+      "lectureHours": 2,
+      "tutorialHours": 0,
+      "practicalHours": 0,
+      "credits": 2,
+      "subjectType": "theory",
+      "priority": 1,
+      "elective": false,
+      "__v": 0,
+      "createdAt": "2026-05-28T06:08:44.246Z",
+      "updatedAt": "2026-05-28T06:08:44.246Z"
+    },
+    {
+      "_id": "6a17dbec6ab079895ccfc31c",
+      "subjectCode": "22UESK507",
+      "subjectName": "Environmental Studies",
+      "semester": 5,
+      "department": "CSE",
+      "branch": "CSE",
+      "lectureHours": 1,
+      "tutorialHours": 0,
+      "practicalHours": 0,
+      "credits": 1,
+      "subjectType": "theory",
+      "priority": 1,
+      "elective": false,
+      "__v": 0,
+      "createdAt": "2026-05-28T06:08:44.246Z",
+      "updatedAt": "2026-05-28T06:08:44.246Z"
+    }
+  ],
+  "teachers": [
+    {
+      "_id": "6a045a9647eb603bac3bcac6",
+      "name": "Dr. Raghavendra G. S.",
+      "email": "iyer@college.edu",
+      "department": "CSE",
+      "subjectsHandled": [
+        "Engineering Chemistry"
+      ],
+      "maxWorkloadPerDay": 6,
+      "maxWorkloadPerWeek": 30,
+      "availability": [],
+      "preferredSlots": [],
+      "__v": 0,
+      "createdAt": "2026-05-13T11:03:50.951Z",
+      "updatedAt": "2026-05-29T05:07:10.547Z",
+      "currentWorkload": 0
+    },
+    {
+      "_id": "6a08572fb77ab9c8c598e90c",
+      "name": "Dr. D. P. Basti",
+      "email": "dr.d.p.basti@college.edu",
+      "department": "Maths",
+      "subjectsHandled": [
+        "Mathematics – I for CSE Stream"
+      ],
+      "maxWorkloadPerDay": 6,
+      "maxWorkloadPerWeek": 30,
+      "currentWorkload": 0,
+      "availability": [],
+      "preferredSlots": [],
+      "createdAt": "2026-05-16T11:38:23.072Z",
+      "updatedAt": "2026-05-28T13:51:30.103Z",
+      "__v": 0,
+      "designation": "Assistant professor",
+      "specialization": "Maths",
+      "user": "6a1844639bcb592d267882ef"
+    },
+    {
+      "_id": "6a08572fb77ab9c8c598e912",
+      "name": "Prof. Priyanka",
+      "email": "prof.priyanka@college.edu",
+      "department": "Chemistry",
+      "subjectsHandled": [
+        "Chemistry for CSE Stream"
+      ],
+      "maxWorkloadPerDay": 6,
+      "maxWorkloadPerWeek": 30,
+      "currentWorkload": 0,
+      "availability": [],
+      "preferredSlots": [],
+      "createdAt": "2026-05-16T11:38:23.115Z",
+      "updatedAt": "2026-05-28T06:08:43.940Z",
+      "__v": 0
+    },
+    {
+      "_id": "6a08572fb77ab9c8c598e915",
+      "name": "Prof. Rani R. Shetty",
+      "email": "dr.ranishetty@college.edu",
+      "department": "CSE",
+      "subjectsHandled": [
+        "Principles of Programming using C",
+        "Advanced C Programming",
+        "Major Project – I"
+      ],
+      "maxWorkloadPerDay": 6,
+      "maxWorkloadPerWeek": 30,
+      "currentWorkload": 0,
+      "availability": [],
+      "preferredSlots": [],
+      "createdAt": "2026-05-16T11:38:23.120Z",
+      "updatedAt": "2026-05-28T06:08:34.778Z",
+      "__v": 0
+    },
+    {
+      "_id": "6a08572fb77ab9c8c598e918",
+      "name": "Prof. Kavya K",
+      "email": "prof.kavyak@college.edu",
+      "department": "Electrical",
+      "subjectsHandled": [
+        "Introduction to Electrical Engineering"
+      ],
+      "maxWorkloadPerDay": 6,
+      "maxWorkloadPerWeek": 30,
+      "currentWorkload": 0,
+      "availability": [],
+      "preferredSlots": [],
+      "createdAt": "2026-05-16T11:38:23.126Z",
+      "updatedAt": "2026-05-29T05:07:10.642Z",
+      "__v": 0
+    },
+    {
+      "_id": "6a08572fb77ab9c8c598e91b",
+      "name": "Dr. Umakant P Kulkarni",
+      "email": "dr.raghavendrag.s@college.edu",
+      "department": "CSE",
+      "subjectsHandled": [
+        "Introduction to AI & its Applications"
+      ],
+      "maxWorkloadPerDay": 6,
+      "maxWorkloadPerWeek": 30,
+      "currentWorkload": 0,
+      "availability": [],
+      "preferredSlots": [],
+      "createdAt": "2026-05-16T11:38:23.132Z",
+      "updatedAt": "2026-05-29T05:07:10.525Z",
+      "__v": 0
+    },
+    {
+      "_id": "6a08572fb77ab9c8c598e927",
+      "name": "Dr. Varsha Joshi",
+      "email": "dr.varshajoshi@college.edu",
+      "department": "Maths",
+      "subjectsHandled": [
+        "Mathematics – II for CSE Stream"
+      ],
+      "maxWorkloadPerDay": 6,
+      "maxWorkloadPerWeek": 30,
+      "currentWorkload": 0,
+      "availability": [],
+      "preferredSlots": [],
+      "createdAt": "2026-05-16T11:38:23.154Z",
+      "updatedAt": "2026-05-28T06:08:44.023Z",
+      "__v": 0
+    },
+    {
+      "_id": "6a08572fb77ab9c8c598e92a",
+      "name": "Dr. Bahubali K M",
+      "email": "dr.bahubalik.m@college.edu",
+      "department": "Physics",
+      "subjectsHandled": [
+        "Physics for CSE Stream"
+      ],
+      "maxWorkloadPerDay": 6,
+      "maxWorkloadPerWeek": 30,
+      "currentWorkload": 0,
+      "availability": [],
+      "preferredSlots": [],
+      "createdAt": "2026-05-16T11:38:23.159Z",
+      "updatedAt": "2026-05-28T06:08:34.606Z",
+      "__v": 0
+    },
+    {
+      "_id": "6a08572fb77ab9c8c598e92d",
+      "name": "Dr. Kumar Madani",
+      "email": "dr.anilkumarh.c@college.edu",
+      "department": "Physics",
+      "subjectsHandled": [
+        "Computer Aided Engineering Drawing"
+      ],
+      "maxWorkloadPerDay": 6,
+      "maxWorkloadPerWeek": 30,
+      "currentWorkload": 0,
+      "availability": [],
+      "preferredSlots": [],
+      "createdAt": "2026-05-16T11:38:23.164Z",
+      "updatedAt": "2026-05-29T05:07:10.627Z",
+      "__v": 0
+    },
+    {
+      "_id": "6a08572fb77ab9c8c598e930",
+      "name": "Prof. Sumangala Bhavikatti",
+      "email": "prof.sumangalabavikatti@college.edu",
+      "department": "Electrical",
+      "subjectsHandled": [
+        "Introduction to Electronics Engineering"
+      ],
+      "maxWorkloadPerDay": 6,
+      "maxWorkloadPerWeek": 30,
+      "currentWorkload": 0,
+      "availability": [],
+      "preferredSlots": [],
+      "createdAt": "2026-05-16T11:38:23.167Z",
+      "updatedAt": "2026-05-29T05:07:10.636Z",
+      "__v": 0
+    },
+    {
+      "_id": "6a08572fb77ab9c8c598e936",
+      "name": "Prof. Jayateerth V Vadavi",
+      "email": "prof.j.v.vadavi@college.edu",
+      "department": "CSE",
+      "subjectsHandled": [
+        "Innovation and Design Thinking",
+        "Digital Systems and Computer Architecture",
+        "Digital Systems Laboratory"
+      ],
+      "maxWorkloadPerDay": 6,
+      "maxWorkloadPerWeek": 30,
+      "currentWorkload": 0,
+      "availability": [],
+      "preferredSlots": [],
+      "createdAt": "2026-05-16T11:38:23.176Z",
+      "updatedAt": "2026-05-29T05:07:10.542Z",
+      "__v": 0
+    },
+    {
+      "_id": "6a08572fb77ab9c8c598e939",
+      "name": "Dr. Shailaja Shivalli",
+      "email": "dr.shailajashivalli@college.edu",
+      "department": "Maths",
+      "subjectsHandled": [
+        "Engineering Mathematics – III"
+      ],
+      "maxWorkloadPerDay": 6,
+      "maxWorkloadPerWeek": 30,
+      "currentWorkload": 0,
+      "availability": [],
+      "preferredSlots": [],
+      "createdAt": "2026-05-16T11:38:23.181Z",
+      "updatedAt": "2026-05-28T06:08:44.065Z",
+      "__v": 0
+    },
+    {
+      "_id": "6a08572fb77ab9c8c598e93f",
+      "name": "Prof. Nita G. Kulkarni",
+      "email": "dr.nitag.kulkarni@college.edu",
+      "department": "CSE",
+      "subjectsHandled": [
+        "Operating Systems"
+      ],
+      "maxWorkloadPerDay": 6,
+      "maxWorkloadPerWeek": 30,
+      "currentWorkload": 0,
+      "availability": [],
+      "preferredSlots": [],
+      "createdAt": "2026-05-16T11:38:23.189Z",
+      "updatedAt": "2026-05-28T06:08:34.687Z",
+      "__v": 0
+    },
+    {
+      "_id": "6a08572fb77ab9c8c598e942",
+      "name": "Prof. Prathap Kumar M.K.",
+      "email": "prof.pratapkumarm.k@college.edu",
+      "department": "CSE",
+      "subjectsHandled": [
+        "Discrete Structures for Computer Science"
+      ],
+      "maxWorkloadPerDay": 6,
+      "maxWorkloadPerWeek": 30,
+      "currentWorkload": 0,
+      "availability": [],
+      "preferredSlots": [],
+      "createdAt": "2026-05-16T11:38:23.194Z",
+      "updatedAt": "2026-05-29T05:07:10.583Z",
+      "__v": 0
+    },
+    {
+      "_id": "6a08572fb77ab9c8c598e945",
+      "name": "Prof. Govind G Negalur",
+      "email": "prof.govindnegalur@college.edu",
+      "department": "CSE",
+      "subjectsHandled": [
+        "Unix Shell Programming",
+        "Artificial Intelligence and Machine Learning",
+        "AI and ML Laboratory"
+      ],
+      "maxWorkloadPerDay": 6,
+      "maxWorkloadPerWeek": 30,
+      "currentWorkload": 0,
+      "availability": [],
+      "preferredSlots": [],
+      "createdAt": "2026-05-16T11:38:23.198Z",
+      "updatedAt": "2026-05-28T06:08:44.175Z",
+      "__v": 0
+    },
+    {
+      "_id": "6a08572fb77ab9c8c598e948",
+      "name": "Dr. Basavaraj H",
+      "email": "dr.basavarajh@college.edu",
+      "department": "Maths",
+      "subjectsHandled": [
+        "Engineering Mathematics – IV"
+      ],
+      "maxWorkloadPerDay": 6,
+      "maxWorkloadPerWeek": 30,
+      "currentWorkload": 0,
+      "availability": [],
+      "preferredSlots": [],
+      "createdAt": "2026-05-16T11:38:23.203Z",
+      "updatedAt": "2026-05-28T06:08:44.096Z",
+      "__v": 0
+    },
+    {
+      "_id": "6a08572fb77ab9c8c598e94e",
+      "name": "Prof. Basavaraj Vaddatti",
+      "email": "prof.basavarajb.vadadatti@college.edu",
+      "department": "CSE",
+      "subjectsHandled": [
+        "Programming Computer Peripherals and Interfacing",
+        "Programming Computer Peripherals and Interfacing Laboratory"
+      ],
+      "maxWorkloadPerDay": 6,
+      "maxWorkloadPerWeek": 30,
+      "currentWorkload": 0,
+      "availability": [],
+      "preferredSlots": [],
+      "createdAt": "2026-05-16T11:38:23.215Z",
+      "updatedAt": "2026-05-29T05:07:10.586Z",
+      "__v": 0
+    },
+    {
+      "_id": "6a085749a7f7b44dfd663f0f",
+      "name": "Dr. Shrinivas B. Kulkarni",
+      "email": "teacher3_1778931529792@college.edu",
+      "department": "CSE",
+      "subjectsHandled": [
+        "Project Management Tools"
+      ],
+      "maxWorkloadPerDay": 6,
+      "maxWorkloadPerWeek": 30,
+      "currentWorkload": 0,
+      "availability": [],
+      "preferredSlots": [],
+      "createdAt": "2026-05-16T11:38:49.793Z",
+      "updatedAt": "2026-05-28T06:08:34.681Z",
+      "__v": 0
+    },
+    {
+      "_id": "6a085749a7f7b44dfd663f18",
+      "name": "Dr. Ranganath G. Yadawad",
+      "email": "teacher6_1778931529804@college.edu",
+      "department": "CSE",
+      "subjectsHandled": [
+        "Database Management Systems",
+        "Database Management Systems Laboratory",
+        "Minor Project – I"
+      ],
+      "maxWorkloadPerDay": 6,
+      "maxWorkloadPerWeek": 30,
+      "currentWorkload": 0,
+      "availability": [],
+      "preferredSlots": [],
+      "createdAt": "2026-05-16T11:38:49.805Z",
+      "updatedAt": "2026-05-29T05:07:10.561Z",
+      "__v": 0
+    },
+    {
+      "_id": "6a085749a7f7b44dfd663f1e",
+      "name": "Prof. Sharada H.N.",
+      "email": "teacher8_1778931529811@college.edu",
+      "department": "CSE",
+      "subjectsHandled": [
+        "Digital Image Processing",
+        "Environmental Studies"
+      ],
+      "maxWorkloadPerDay": 6,
+      "maxWorkloadPerWeek": 30,
+      "currentWorkload": 0,
+      "availability": [],
+      "preferredSlots": [],
+      "createdAt": "2026-05-16T11:38:49.812Z",
+      "updatedAt": "2026-05-29T05:07:10.595Z",
+      "__v": 0
+    },
+    {
+      "_id": "6a085749a7f7b44dfd663f21",
+      "name": "Dr. Vidyagouri Kulkarni",
+      "email": "teacher9_1778931529815@college.edu",
+      "department": "CSE",
+      "subjectsHandled": [
+        "Python Programming Laboratory",
+        "Automata Theory and Compiler Design",
+        "Natural Language Processing"
+      ],
+      "maxWorkloadPerDay": 6,
+      "maxWorkloadPerWeek": 30,
+      "currentWorkload": 0,
+      "availability": [],
+      "preferredSlots": [],
+      "createdAt": "2026-05-16T11:38:49.816Z",
+      "updatedAt": "2026-05-28T06:08:44.164Z",
+      "__v": 0
+    },
+    {
+      "_id": "6a085749a7f7b44dfd663f2a",
+      "name": "Prof. Sandhya S. V.",
+      "email": "teacher12_1778931529827@college.edu",
+      "department": "CSE",
+      "subjectsHandled": [
+        "Advanced Data Structures and Algorithms",
+        "Cryptography and Network Security",
+        "Cryptography and Network Security Laboratory"
+      ],
+      "maxWorkloadPerDay": 6,
+      "maxWorkloadPerWeek": 30,
+      "currentWorkload": 0,
+      "availability": [],
+      "preferredSlots": [],
+      "createdAt": "2026-05-16T11:38:49.827Z",
+      "updatedAt": "2026-05-28T06:08:34.734Z",
+      "__v": 0
+    },
+    {
+      "_id": "6a085749a7f7b44dfd663f39",
+      "name": "Prof. Shreedhar G. Yadawad",
+      "email": "teacher17_1778931529844@college.edu",
+      "department": "CSE",
+      "subjectsHandled": [
+        "Distributed Systems and Applications"
+      ],
+      "maxWorkloadPerDay": 6,
+      "maxWorkloadPerWeek": 30,
+      "currentWorkload": 0,
+      "availability": [],
+      "preferredSlots": [],
+      "createdAt": "2026-05-16T11:38:49.845Z",
+      "updatedAt": "2026-05-29T05:07:10.577Z",
+      "__v": 0
+    },
+    {
+      "_id": "6a17daca1d3b3e41113cf100",
+      "name": "Dr. Preti B J",
+      "email": "drpretibj_4845@college.edu",
+      "department": "Maths",
+      "subjectsHandled": [],
+      "maxWorkloadPerDay": 6,
+      "maxWorkloadPerWeek": 30,
+      "currentWorkload": 0,
+      "availability": [],
+      "preferredSlots": [],
+      "createdAt": "2026-05-28T06:03:54.849Z",
+      "updatedAt": "2026-05-28T06:03:54.849Z",
+      "__v": 0
+    },
+    {
+      "_id": "6a17daca1d3b3e41113cf104",
+      "name": "Dr. Jennifer Kernel",
+      "email": "drjenniferkernel_4861@college.edu",
+      "department": "Maths",
+      "subjectsHandled": [],
+      "maxWorkloadPerDay": 6,
+      "maxWorkloadPerWeek": 30,
+      "currentWorkload": 0,
+      "availability": [],
+      "preferredSlots": [],
+      "createdAt": "2026-05-28T06:03:54.862Z",
+      "updatedAt": "2026-05-28T06:03:54.862Z",
+      "__v": 0
+    },
+    {
+      "_id": "6a17daca1d3b3e41113cf108",
+      "name": "Dr. Prakash Badiger",
+      "email": "drprakashbadiger_4869@college.edu",
+      "department": "Maths",
+      "subjectsHandled": [],
+      "maxWorkloadPerDay": 6,
+      "maxWorkloadPerWeek": 30,
+      "currentWorkload": 0,
+      "availability": [],
+      "preferredSlots": [],
+      "createdAt": "2026-05-28T06:03:54.870Z",
+      "updatedAt": "2026-05-28T06:03:54.870Z",
+      "__v": 0
+    },
+    {
+      "_id": "6a17daca1d3b3e41113cf112",
+      "name": "Dr. Malathi",
+      "email": "drmalathi_4891@college.edu",
+      "department": "Physics",
+      "subjectsHandled": [],
+      "maxWorkloadPerDay": 6,
+      "maxWorkloadPerWeek": 30,
+      "currentWorkload": 0,
+      "availability": [],
+      "preferredSlots": [],
+      "createdAt": "2026-05-28T06:03:54.891Z",
+      "updatedAt": "2026-05-28T06:03:54.891Z",
+      "__v": 0
+    },
+    {
+      "_id": "6a17daca1d3b3e41113cf116",
+      "name": "Dr. Asma",
+      "email": "drasma_4898@college.edu",
+      "department": "Chemistry",
+      "subjectsHandled": [],
+      "maxWorkloadPerDay": 6,
+      "maxWorkloadPerWeek": 30,
+      "currentWorkload": 0,
+      "availability": [],
+      "preferredSlots": [],
+      "createdAt": "2026-05-28T06:03:54.899Z",
+      "updatedAt": "2026-05-28T06:03:54.899Z",
+      "__v": 0
+    },
+    {
+      "_id": "6a17daca1d3b3e41113cf11a",
+      "name": "Dr. Sahana",
+      "email": "drsahana_4904@college.edu",
+      "department": "Chemistry",
+      "subjectsHandled": [],
+      "maxWorkloadPerDay": 6,
+      "maxWorkloadPerWeek": 30,
+      "currentWorkload": 0,
+      "availability": [],
+      "preferredSlots": [],
+      "createdAt": "2026-05-28T06:03:54.905Z",
+      "updatedAt": "2026-05-28T06:03:54.905Z",
+      "__v": 0
+    },
+    {
+      "_id": "6a17dbe24c3d9eebe368929a",
+      "name": "Dr. Shrihari M Joshi",
+      "email": "shriharijoshi_4659@college.edu",
+      "department": "CSE",
+      "subjectsHandled": [],
+      "maxWorkloadPerDay": 6,
+      "maxWorkloadPerWeek": 30,
+      "currentWorkload": 0,
+      "availability": [],
+      "preferredSlots": [],
+      "createdAt": "2026-05-28T06:08:34.661Z",
+      "updatedAt": "2026-05-28T06:08:34.661Z",
+      "__v": 0
+    },
+    {
+      "_id": "6a17dbe24c3d9eebe36892ca",
+      "name": "Dr. Smitesh D. Patravali",
+      "email": "smiteshpatravali_4759@college.edu",
+      "department": "CSE",
+      "subjectsHandled": [],
+      "maxWorkloadPerDay": 6,
+      "maxWorkloadPerWeek": 30,
+      "currentWorkload": 0,
+      "availability": [],
+      "preferredSlots": [],
+      "createdAt": "2026-05-28T06:08:34.760Z",
+      "updatedAt": "2026-05-28T06:08:34.760Z",
+      "__v": 0
+    },
+    {
+      "_id": "6a17dbe24c3d9eebe36892d2",
+      "name": "Prof. Indira Umarji",
+      "email": "indiraumarji_4773@college.edu",
+      "department": "CSE",
+      "subjectsHandled": [],
+      "maxWorkloadPerDay": 6,
+      "maxWorkloadPerWeek": 30,
+      "currentWorkload": 0,
+      "availability": [],
+      "preferredSlots": [],
+      "createdAt": "2026-05-28T06:08:34.774Z",
+      "updatedAt": "2026-05-28T06:08:34.774Z",
+      "__v": 0
+    },
+    {
+      "_id": "6a17dbe24c3d9eebe36892d8",
+      "name": "Prof. Rashmi Patil",
+      "email": "rashmipatil_4783@college.edu",
+      "department": "CSE",
+      "subjectsHandled": [],
+      "maxWorkloadPerDay": 6,
+      "maxWorkloadPerWeek": 30,
+      "currentWorkload": 0,
+      "availability": [],
+      "preferredSlots": [],
+      "createdAt": "2026-05-28T06:08:34.784Z",
+      "updatedAt": "2026-05-28T06:08:34.784Z",
+      "__v": 0
+    },
+    {
+      "_id": "6a17dbe24c3d9eebe36892dc",
+      "name": "Prof. Yashodha A Sambrani",
+      "email": "yashodhasambrani_4789@college.edu",
+      "department": "CSE",
+      "subjectsHandled": [],
+      "maxWorkloadPerDay": 6,
+      "maxWorkloadPerWeek": 30,
+      "currentWorkload": 0,
+      "availability": [],
+      "preferredSlots": [],
+      "createdAt": "2026-05-28T06:08:34.790Z",
+      "updatedAt": "2026-05-28T06:08:34.790Z",
+      "__v": 0
+    },
+    {
+      "_id": "6a1838d6e37a34c995ea5150",
+      "name": "Prof. Anand Pashupatimath",
+      "email": "anandpashupatimath_0047@college.edu",
+      "department": "CSE",
+      "subjectsHandled": [],
+      "maxWorkloadPerDay": 6,
+      "maxWorkloadPerWeek": 30,
+      "currentWorkload": 0,
+      "availability": [],
+      "preferredSlots": [],
+      "createdAt": "2026-05-28T12:45:10.048Z",
+      "updatedAt": "2026-05-28T12:45:10.048Z",
+      "__v": 0
+    },
+    {
+      "_id": "6a1838d6e37a34c995ea515a",
+      "name": "Prof. Nandakumar C",
+      "email": "prathapkumarmk_0074@college.edu",
+      "department": "Electrical",
+      "subjectsHandled": [],
+      "maxWorkloadPerDay": 6,
+      "maxWorkloadPerWeek": 30,
+      "currentWorkload": 0,
+      "availability": [],
+      "preferredSlots": [],
+      "createdAt": "2026-05-28T12:45:10.075Z",
+      "updatedAt": "2026-05-29T05:07:10.638Z",
+      "__v": 0
+    },
+    {
+      "_id": "6a191efeb6b2e4f5c1edf0b2",
+      "name": "Prof. Anand Vaidya",
+      "email": "profanandvaidya_0564@college.edu",
+      "department": "CSE",
+      "subjectsHandled": [],
+      "maxWorkloadPerDay": 6,
+      "maxWorkloadPerWeek": 30,
+      "currentWorkload": 0,
+      "availability": [],
+      "preferredSlots": [],
+      "createdAt": "2026-05-29T05:07:10.568Z",
+      "updatedAt": "2026-05-29T05:07:10.568Z",
+      "__v": 0
+    },
+    {
+      "_id": "6a191efeb6b2e4f5c1edf0cf",
+      "name": "Prof. Sanjeeth",
+      "email": "profsanjeeth_0640@college.edu",
+      "department": "Electrical",
+      "subjectsHandled": [],
+      "maxWorkloadPerDay": 6,
+      "maxWorkloadPerWeek": 30,
+      "currentWorkload": 0,
+      "availability": [],
+      "preferredSlots": [],
+      "createdAt": "2026-05-29T05:07:10.640Z",
+      "updatedAt": "2026-05-29T05:07:10.640Z",
+      "__v": 0
+    }
+  ],
+  "rooms": [
+    {
+      "_id": "6a045a9647eb603bac3bcad3",
+      "roomNumber": "R101",
+      "capacity": 60,
+      "roomType": "lecture",
+      "__v": 0,
+      "createdAt": "2026-05-13T11:03:50.963Z",
+      "updatedAt": "2026-05-13T11:03:50.963Z"
+    },
+    {
+      "_id": "6a045a9647eb603bac3bcad4",
+      "roomNumber": "R102",
+      "capacity": 60,
+      "roomType": "lecture",
+      "__v": 0,
+      "createdAt": "2026-05-13T11:03:50.963Z",
+      "updatedAt": "2026-05-13T11:03:50.963Z"
+    },
+    {
+      "_id": "6a045a9647eb603bac3bcad5",
+      "roomNumber": "R201",
+      "capacity": 60,
+      "roomType": "lecture",
+      "__v": 0,
+      "createdAt": "2026-05-13T11:03:50.963Z",
+      "updatedAt": "2026-05-13T11:03:50.963Z"
+    },
+    {
+      "_id": "6a045a9647eb603bac3bcad6",
+      "roomNumber": "D1",
+      "capacity": 40,
+      "roomType": "lecture",
+      "__v": 0,
+      "createdAt": "2026-05-13T11:03:50.963Z",
+      "updatedAt": "2026-05-13T11:03:50.963Z"
+    },
+    {
+      "_id": "6a18597baa3ddec688190190",
+      "roomNumber": "105",
+      "capacity": 60,
+      "roomType": "lecture",
+      "createdAt": "2026-05-28T15:04:27.781Z",
+      "updatedAt": "2026-05-28T15:04:27.781Z",
+      "__v": 0
+    },
+    {
+      "_id": "6a185a4cc27ddac33b0fefc5",
+      "roomNumber": "R202",
+      "capacity": 60,
+      "roomType": "lecture",
+      "createdAt": "2026-05-28T15:07:56.397Z",
+      "updatedAt": "2026-05-28T15:07:56.397Z",
+      "__v": 0
+    },
+    {
+      "_id": "6a185a4cc27ddac33b0fefc8",
+      "roomNumber": "R203",
+      "capacity": 60,
+      "roomType": "lecture",
+      "createdAt": "2026-05-28T15:07:56.434Z",
+      "updatedAt": "2026-05-28T15:07:56.434Z",
+      "__v": 0
+    },
+    {
+      "_id": "6a185a54c27ddac33b0feff1",
+      "roomNumber": "R204",
+      "capacity": 60,
+      "roomType": "lecture",
+      "createdAt": "2026-05-28T15:08:04.237Z",
+      "updatedAt": "2026-05-28T15:08:04.237Z",
+      "__v": 0
+    },
+    {
+      "_id": "6a185a55c27ddac33b0feff8",
+      "roomNumber": "R205",
+      "capacity": 60,
+      "roomType": "lecture",
+      "createdAt": "2026-05-28T15:08:05.142Z",
+      "updatedAt": "2026-05-28T15:08:05.142Z",
+      "__v": 0
+    },
+    {
+      "_id": "6a185a57c27ddac33b0feffb",
+      "roomNumber": "R206",
+      "capacity": 60,
+      "roomType": "lecture",
+      "createdAt": "2026-05-28T15:08:07.544Z",
+      "updatedAt": "2026-05-28T15:08:07.544Z",
+      "__v": 0
+    },
+    {
+      "_id": "6a185a57c27ddac33b0feffe",
+      "roomNumber": "R207",
+      "capacity": 60,
+      "roomType": "lecture",
+      "createdAt": "2026-05-28T15:08:07.649Z",
+      "updatedAt": "2026-05-28T15:08:07.649Z",
+      "__v": 0
+    },
+    {
+      "_id": "6a185a57c27ddac33b0ff001",
+      "roomNumber": "R208",
+      "capacity": 60,
+      "roomType": "lecture",
+      "createdAt": "2026-05-28T15:08:07.881Z",
+      "updatedAt": "2026-05-28T15:08:07.881Z",
+      "__v": 0
+    },
+    {
+      "_id": "6a185a58c27ddac33b0ff004",
+      "roomNumber": "R209",
+      "capacity": 60,
+      "roomType": "lecture",
+      "createdAt": "2026-05-28T15:08:08.245Z",
+      "updatedAt": "2026-05-28T15:08:08.245Z",
+      "__v": 0
+    },
+    {
+      "_id": "6a185a58c27ddac33b0ff007",
+      "roomNumber": "R210",
+      "capacity": 60,
+      "roomType": "lecture",
+      "createdAt": "2026-05-28T15:08:08.409Z",
+      "updatedAt": "2026-05-28T15:08:08.409Z",
+      "__v": 0
+    },
+    {
+      "_id": "6a185a58c27ddac33b0ff00a",
+      "roomNumber": "R211",
+      "capacity": 60,
+      "roomType": "lecture",
+      "createdAt": "2026-05-28T15:08:08.952Z",
+      "updatedAt": "2026-05-28T15:08:08.952Z",
+      "__v": 0
+    },
+    {
+      "_id": "6a185a59c27ddac33b0ff00d",
+      "roomNumber": "R212",
+      "capacity": 60,
+      "roomType": "lecture",
+      "createdAt": "2026-05-28T15:08:09.270Z",
+      "updatedAt": "2026-05-28T15:08:09.270Z",
+      "__v": 0
+    },
+    {
+      "_id": "6a185a59c27ddac33b0ff010",
+      "roomNumber": "R213",
+      "capacity": 60,
+      "roomType": "lecture",
+      "createdAt": "2026-05-28T15:08:09.376Z",
+      "updatedAt": "2026-05-28T15:08:09.376Z",
+      "__v": 0
+    },
+    {
+      "_id": "6a185a59c27ddac33b0ff013",
+      "roomNumber": "R214",
+      "capacity": 60,
+      "roomType": "lecture",
+      "createdAt": "2026-05-28T15:08:09.444Z",
+      "updatedAt": "2026-05-28T15:08:09.444Z",
+      "__v": 0
+    },
+    {
+      "_id": "6a185a59c27ddac33b0ff016",
+      "roomNumber": "R215",
+      "capacity": 60,
+      "roomType": "lecture",
+      "createdAt": "2026-05-28T15:08:09.523Z",
+      "updatedAt": "2026-05-28T15:08:09.523Z",
+      "__v": 0
+    },
+    {
+      "_id": "6a185a59c27ddac33b0ff019",
+      "roomNumber": "R216",
+      "capacity": 60,
+      "roomType": "lecture",
+      "createdAt": "2026-05-28T15:08:09.545Z",
+      "updatedAt": "2026-05-28T15:08:09.545Z",
+      "__v": 0
+    }
+  ],
+  "constraints": {},
+  "facultyMapping": {
+    "6a17dbec6ab079895ccfc313": {
+      "theory": "6a045a9647eb603bac3bcac6"
+    },
+    "6a17dbec6ab079895ccfc314": {
+      "theory": "6a045a9647eb603bac3bcac6"
+    },
+    "6a17dbec6ab079895ccfc315": {
+      "theory": "6a045a9647eb603bac3bcac6"
+    },
+    "6a17dbec6ab079895ccfc316": {
+      "theory": "6a045a9647eb603bac3bcac6",
+      "lab": [
+        "6a045a9647eb603bac3bcac6",
+        "6a08572fb77ab9c8c598e915"
+      ]
+    },
+    "6a17dbec6ab079895ccfc317": {
+      "theory": "6a045a9647eb603bac3bcac6"
+    },
+    "6a17dbec6ab079895ccfc318": {
+      "lab": [
+        "6a045a9647eb603bac3bcac6",
+        "6a08572fb77ab9c8c598e915"
+      ]
+    },
+    "6a17dbec6ab079895ccfc319": {
+      "lab": [
+        "6a045a9647eb603bac3bcac6",
+        "6a08572fb77ab9c8c598e915"
+      ]
+    },
+    "6a17dbec6ab079895ccfc31a": {
+      "lab": [
+        "6a045a9647eb603bac3bcac6",
+        "6a08572fb77ab9c8c598e915"
+      ]
+    },
+    "6a17dbec6ab079895ccfc31b": {
+      "theory": "6a045a9647eb603bac3bcac6"
+    },
+    "6a17dbec6ab079895ccfc31c": {
+      "theory": "6a045a9647eb603bac3bcac6"
+    }
+  },
+  "divisions": [
+    {
+      "name": "A",
+      "strength": 60
+    },
+    {
+      "name": "DIV-A",
+      "strength": 60
+    }
+  ],
+  "facultyMaxWorkloads": {
+    "6a045a9647eb603bac3bcac6": 30,
+    "6a08572fb77ab9c8c598e90c": 30,
+    "6a08572fb77ab9c8c598e912": 30,
+    "6a08572fb77ab9c8c598e915": 30,
+    "6a08572fb77ab9c8c598e918": 30,
+    "6a08572fb77ab9c8c598e91b": 30,
+    "6a08572fb77ab9c8c598e927": 30,
+    "6a08572fb77ab9c8c598e92a": 30,
+    "6a08572fb77ab9c8c598e92d": 30,
+    "6a08572fb77ab9c8c598e930": 30,
+    "6a08572fb77ab9c8c598e936": 30,
+    "6a08572fb77ab9c8c598e939": 30,
+    "6a08572fb77ab9c8c598e93f": 30,
+    "6a08572fb77ab9c8c598e942": 30,
+    "6a08572fb77ab9c8c598e945": 30,
+    "6a08572fb77ab9c8c598e948": 30,
+    "6a08572fb77ab9c8c598e94e": 30,
+    "6a085749a7f7b44dfd663f0f": 30,
+    "6a085749a7f7b44dfd663f18": 30,
+    "6a085749a7f7b44dfd663f1e": 30,
+    "6a085749a7f7b44dfd663f21": 30,
+    "6a085749a7f7b44dfd663f2a": 30,
+    "6a085749a7f7b44dfd663f39": 30,
+    "6a17daca1d3b3e41113cf100": 30,
+    "6a17daca1d3b3e41113cf104": 30,
+    "6a17daca1d3b3e41113cf108": 30,
+    "6a17daca1d3b3e41113cf112": 30,
+    "6a17daca1d3b3e41113cf116": 30,
+    "6a17daca1d3b3e41113cf11a": 30,
+    "6a17dbe24c3d9eebe368929a": 30,
+    "6a17dbe24c3d9eebe36892ca": 30,
+    "6a17dbe24c3d9eebe36892d2": 30,
+    "6a17dbe24c3d9eebe36892d8": 30,
+    "6a17dbe24c3d9eebe36892dc": 30,
+    "6a1838d6e37a34c995ea5150": 30,
+    "6a1838d6e37a34c995ea515a": 30,
+    "6a191efeb6b2e4f5c1edf0b2": 30,
+    "6a191efeb6b2e4f5c1edf0cf": 30
+  },
+  "fixedTimings": {},
+  "labsConfig": []
+}

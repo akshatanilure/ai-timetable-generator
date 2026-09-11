@@ -30,19 +30,37 @@ export const AuthProvider = ({ children }) => {
   }, []);
 
   const login = async (email, password) => {
-    const userObj = await authService.login(email, password);
+    const resData = await authService.login(email, password);
+    const userObj = {
+      _id: resData._id,
+      name: resData.name,
+      email: resData.email,
+      role: resData.role,
+      department: resData.department,
+      semester: resData.semester,
+      division: resData.division,
+    };
     setUser(userObj);
     setRole(userObj.role);
     localStorage.setItem('role', userObj.role);
-    return userObj;
+    return resData;
   };
 
   const register = async (userData) => {
-    const userObj = await authService.register(userData);
+    const resData = await authService.register(userData);
+    const userObj = {
+      _id: resData._id,
+      name: resData.name,
+      email: resData.email,
+      role: resData.role,
+      department: resData.department,
+      semester: resData.semester,
+      division: resData.division,
+    };
     setUser(userObj);
     setRole(userObj.role);
     localStorage.setItem('role', userObj.role);
-    return userObj;
+    return resData;
   };
 
   const logout = () => {

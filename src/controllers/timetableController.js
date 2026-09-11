@@ -236,27 +236,42 @@ exports.generateTimetableML = async (req, res) => {
       divisions: divisions || [{ name: 'DIV-A', strength: 60 }],
       facultyMaxWorkloads: adjustedMaxWorkloads,
       fixedTimings: fixedTimings || {},
-      labsConfig: labsConfig || []
+      labsConfig: labsConfig || [],
+      semester: parseInt(semester) || 1,
+      branch: branch || 'CSE'
     };
 
-    // 3. Make HTTP request to the Python FastAPI microservice
+    // 3. Make HTTP request to the Python FastAPI microservice with Auto-Repair loop
     console.log("Sending data to Python ML Engine...");
     
-    // Using native fetch (requires Node 18+)
-    const pythonResponse = await fetch('http://127.0.0.1:8000/api/ml/generate', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
-    });
+    let mlData = null;
+    let attempts = 0;
+    const maxAttempts = 5;
 
-    if (!pythonResponse.ok) {
-      const errorText = await pythonResponse.text();
-      throw new Error(`Python engine responded with status: ${pythonResponse.status} - ${errorText}`);
+    while (attempts < maxAttempts) {
+      attempts++;
+      const pythonResponse = await fetch('http://127.0.0.1:8000/api/ml/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+
+      if (!pythonResponse.ok) {
+        const errorText = await pythonResponse.text();
+        throw new Error(`Python engine responded with status: ${pythonResponse.status} - ${errorText}`);
+      }
+
+      mlData = await pythonResponse.json();
+      const conflictMsg = mlData.message || '';
+      
+      if (conflictMsg.includes('Conflicts: 0')) {
+        console.log(`Timetable generated cleanly with 0 conflicts on attempt ${attempts}`);
+        break;
+      }
+      console.warn(`Attempt ${attempts} had minor conflicts (${conflictMsg}), retrying auto-repair...`);
     }
 
-    const mlData = await pythonResponse.json();
-
-    // 4. Return the simulated ML response to the frontend
+    // 4. Return the response to the frontend
     res.status(200).json({
       success: true,
       message: mlData.message,
@@ -318,12 +333,24 @@ exports.saveTimetableML = async (req, res) => {
             }
         }
 
+        const mongoose = require('mongoose');
+        let facultyIds = [];
+        if (Array.isArray(entry.faculty)) {
+          facultyIds = entry.faculty
+            .map(f => (typeof f === 'object' ? f._id : f))
+            .filter(id => id && mongoose.Types.ObjectId.isValid(id));
+        }
+
+        if (entry.batch) {
+          console.log(`SaveML Batch ${entry.batch.batchName} Raw Faculty:`, entry.faculty, `Filtered IDs (${facultyIds.length}):`, facultyIds);
+        }
+
         formattedSchedule.push({
           day: entry.day,
           startTime: entry.startTime,
           endTime: entry.endTime,
           subject: entry.subject._id,
-          faculty: entry.faculty.map(f => f._id),
+          faculty: facultyIds,
           room: roomId,
           batch: batchId
         });

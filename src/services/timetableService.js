@@ -20,7 +20,7 @@ class TimetableService {
     this.divisionSchedule = {}; // { divisionId: { day: { slot: true } } }
 
     this.days = this.constraints?.hardConstraints?.fixedWorkingDays || ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
-    this.timeSlots = this.generateTimeSlots('09:00', '17:00');
+    this.timeSlots = this.generateTimeSlots('08:00', '16:30');
     this.lunchBreak = this.constraints?.hardConstraints?.lunchBreak || { startTime: '13:00', endTime: '14:00' };
   }
 

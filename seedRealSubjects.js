@@ -29,6 +29,8 @@ const subjectsRaw = [
   { code: '22SFH18', title: 'Scientific Foundations of Health', credits: 1, ltp: '1-0-0', inst: 'Prof. Chaitali Chate', sem: 1 },
   // SEM 2
   { code: '22MATS21', title: 'Mathematics – II for CSE Stream', credits: 4, ltp: '2-2-2', inst: 'Dr. Varsha Joshi', sem: 2 },
+  { code: '22CHES22', title: 'Chemistry for CSE Stream', credits: 4, ltp: '2-2-2', inst: 'Prof. Priyanka', sem: 2 },
+  { code: '22POP23', title: 'Principles of Programming using C', credits: 3, ltp: '2-0-2', inst: 'Dr. Rani Shetty', sem: 2 },
   { code: '22PHYS22', title: 'Physics for CSE Stream', credits: 4, ltp: '2-2-2', inst: 'Dr. Bahubali K. M', sem: 2 },
   { code: '22CED23', title: 'Computer Aided Engineering Drawing', credits: 3, ltp: '2-0-2', inst: 'Dr. Anilkumar H. C', sem: 2 },
   { code: '22ESC243', title: 'Introduction to Electronics Engineering', credits: 3, ltp: '3-0-0', inst: 'Prof. Sumangala Bavikatti', sem: 2 },
@@ -134,6 +136,8 @@ const run = async () => {
       if (ltp.p > 0 && ltp.l === 0) type = 'lab';
       if (s.title.includes('Project')) type = 'project';
 
+      const isMathLab = (s.sem === 1 || s.sem === 2) && s.title.toLowerCase().includes('mathematic') && ltp.p > 0;
+
       return {
         subjectCode: s.code,
         subjectName: s.title,
@@ -144,7 +148,8 @@ const run = async () => {
         lectureHours: ltp.l,
         tutorialHours: ltp.t,
         practicalHours: ltp.p,
-        subjectType: type
+        subjectType: type,
+        isFullClassLab: isMathLab
       };
     });
 

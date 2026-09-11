@@ -324,7 +324,7 @@ const GenerateTimetable = () => {
                                   disabled={!fixedTimings[sub._id]?.day}
                                 >
                                   <option value="">-- Any Time --</option>
-                                  {["08:00", "09:00", "10:30", "11:30", "12:30", "14:30", "15:30", "16:30"].map(t => <option key={t} value={t}>{t}</option>)}
+                                  {["08:00", "09:00", "10:30", "11:30", "14:30", "15:30"].map(t => <option key={t} value={t}>{t}</option>)}
                                 </select>
                               </div>
                             </div>
@@ -345,6 +345,7 @@ const GenerateTimetable = () => {
                               const isMath = subNameLower.includes('math') || subNameLower.includes('mats') || subCodeLower.includes('mat') || subCodeLower.includes('mac') || subDeptLower.includes('math');
                               const isPhysics = subNameLower.includes('physics') || subNameLower.includes('phys') || subCodeLower.includes('phy') || subDeptLower.includes('physics') || subDeptLower.includes('phys');
                               const isChemistry = subNameLower.includes('chemistry') || subNameLower.includes('chem') || subCodeLower.includes('che') || subDeptLower.includes('chemistry') || subDeptLower.includes('chem');
+                              const isHumanities = subNameLower.includes('writing') || subNameLower.includes('english') || subNameLower.includes('uhv') || subNameLower.includes('value') || subNameLower.includes('kannada') || subNameLower.includes('constitution') || subNameLower.includes('health') || subNameLower.includes('humanities') || subNameLower.includes('professional');
 
                               let filteredFaculties = faculties;
                               if (isMath) {
@@ -371,8 +372,18 @@ const GenerateTimetable = () => {
                                          nameLower.includes('malathi') ||
                                          (f.subjectsHandled || []).some(s => s.toLowerCase().includes('physics') || s.toLowerCase().includes('phys'));
                                 });
+                              } else if (isHumanities) {
+                                filteredFaculties = faculties.filter(f => {
+                                  const nameLower = (f.name || '').toLowerCase();
+                                  return nameLower.includes('kurodi') ||
+                                         nameLower.includes('shashikant') ||
+                                         nameLower.includes('maruti') ||
+                                         nameLower.includes('kadam') ||
+                                         (f.department || '').toLowerCase().includes('human') ||
+                                         (f.department || '').toLowerCase().includes('cse');
+                                });
                               } else {
-                                // Rest of the subjects: ONLY the specific 22 Computer Science (CSE) faculty should appear
+                                // Rest of the subjects: ONLY the specific Computer Science (CSE) faculty should appear
                                 filteredFaculties = faculties.filter(f => {
                                   const nameLower = (f.name || '').toLowerCase();
                                   const deptLower = (f.department || '').toLowerCase();
@@ -401,7 +412,9 @@ const GenerateTimetable = () => {
                                     nameLower.includes('indira') ||
                                     nameLower.includes('rani') ||
                                     nameLower.includes('rashmi') ||
-                                    nameLower.includes('yashodha')
+                                    nameLower.includes('yashodha') ||
+                                    nameLower.includes('shashikant') ||
+                                    nameLower.includes('kurodi')
                                   );
                                 });
                               }

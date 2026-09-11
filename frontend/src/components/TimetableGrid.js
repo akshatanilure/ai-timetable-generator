@@ -8,11 +8,9 @@ const TimetableGrid = ({ schedule }) => {
     { start: '10:00', end: '10:30', type: 'short_break', label: 'T E A   B R E A K' },
     { start: '10:30', end: '11:30', type: 'class' },
     { start: '11:30', end: '12:30', type: 'class' },
-    { start: '12:30', end: '13:30', type: 'class' },
-    { start: '13:30', end: '14:30', type: 'lunch_break', label: 'L U N C H   B R E A K' },
+    { start: '12:30', end: '14:30', type: 'lunch_break', label: 'L U N C H   B R E A K' },
     { start: '14:30', end: '15:30', type: 'class' },
     { start: '15:30', end: '16:30', type: 'class' },
-    { start: '16:30', end: '17:00', type: 'class' },
   ];
 
   const formatTime = (timeStr) => {
@@ -32,7 +30,15 @@ const TimetableGrid = ({ schedule }) => {
     const startIndex = gridSlots.findIndex(s => s.start === session.startTime);
     const endIndex = gridSlots.findIndex(s => s.end === session.endTime);
     if (startIndex === -1 || endIndex === -1) return 1;
-    return endIndex - startIndex + 1;
+    
+    // Count how many non-break slots are covered by this session
+    let span = 0;
+    for (let i = startIndex; i <= endIndex; i++) {
+      if (gridSlots[i].type !== 'short_break' && gridSlots[i].type !== 'lunch_break') {
+        span++;
+      }
+    }
+    return span > 0 ? span : 1;
   };
 
   // Extract unique subjects for the bottom table
@@ -128,17 +134,33 @@ const TimetableGrid = ({ schedule }) => {
                         colSpan={span} 
                         className="border border-gray-400 p-2 text-center align-middle hover:bg-blue-50 transition-colors"
                       >
-                        <div className="flex flex-col items-center justify-center gap-1 text-xs">
+                        <div className="flex flex-col items-center justify-center gap-1.5 text-xs p-1">
                           {isLabGroup ? (
-                            <>
-                               <span className="font-bold text-gray-800 break-words">
-                                  {sessions.map(s => {
-                                    const code = s.subject?.subjectCode || s.subject?.subjectName || '';
-                                    const bName = s.batch?.batchName;
-                                    return bName ? `${code}(${bName})` : code;
-                                  }).join(' / ')}
-                               </span>
-                            </>
+                            <div className="flex flex-col gap-1.5 w-full">
+                              {sessions.map((s, sIdx) => {
+                                const code = s.subject?.subjectCode || s.subject?.subjectName || '';
+                                const bName = s.batch?.batchName;
+                                const roomName = s.room?.roomNumber || 'Lab';
+                                const facList = Array.isArray(s.faculty)
+                                  ? s.faculty.map(f => f?.name || f?.toString()).join(', ')
+                                  : (s.faculty?.name || 'Faculty TBD');
+
+                                return (
+                                  <div key={sIdx} className="bg-indigo-50/80 border border-indigo-100 rounded-lg p-1.5 flex flex-col items-center shadow-2xs">
+                                    <div className="font-extrabold text-indigo-900 flex items-center gap-1">
+                                      <span>{code}</span>
+                                      {bName && <span className="bg-indigo-600 text-white text-[10px] px-1.5 py-0.5 rounded font-black">{bName}</span>}
+                                    </div>
+                                    <span className="text-[11px] text-gray-700 font-semibold mt-0.5">
+                                      📍 {roomName}
+                                    </span>
+                                    <span className="text-[10px] text-indigo-700 font-bold italic text-center">
+                                      👨‍🏫 {facList}
+                                    </span>
+                                  </div>
+                                );
+                              })}
+                            </div>
                           ) : (
                             sessions.map((s, idx) => (
                               <React.Fragment key={idx}>
@@ -150,9 +172,9 @@ const TimetableGrid = ({ schedule }) => {
                                     (R N {s.room.roomNumber.replace('R', '')})
                                   </span>
                                 )}
-                                {s.faculty && (Array.isArray(s.faculty) ? s.faculty[0]?.name : s.faculty.name) && (
+                                {s.faculty && (Array.isArray(s.faculty) ? s.faculty.map(f => f?.name).join(', ') : s.faculty.name) && (
                                   <span className="text-gray-500 italic mt-0.5">
-                                    {Array.isArray(s.faculty) ? s.faculty[0]?.name : s.faculty.name}
+                                    {Array.isArray(s.faculty) ? s.faculty.map(f => f?.name).join(', ') : s.faculty.name}
                                   </span>
                                 )}
                                 {idx < sessions.length - 1 && <span className="text-gray-400 my-1 border-b border-gray-300 w-full block"></span>}

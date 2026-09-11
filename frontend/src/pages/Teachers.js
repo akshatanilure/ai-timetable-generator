@@ -6,6 +6,16 @@ const Teachers = () => {
   const [teachers, setTeachers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
+  
+  // Modal & Form State
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [formData, setFormData] = useState({
+    name: '',
+    email: '',
+    department: 'CSE',
+    subjectsInput: '',
+    maxWorkloadPerWeek: 30
+  });
 
   useEffect(() => {
     fetchTeachers();
@@ -33,6 +43,34 @@ const Teachers = () => {
     }
   };
 
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    try {
+      const payload = {
+        name: formData.name,
+        email: formData.email,
+        department: formData.department,
+        subjectsHandled: formData.subjectsInput.split(',').map(s => s.trim()).filter(Boolean),
+        maxWorkloadPerDay: 6, // default safe constraint value
+        maxWorkloadPerWeek: parseInt(formData.maxWorkloadPerWeek) || 30
+      };
+
+      const res = await api.post('/teachers', payload);
+      setTeachers([...teachers, res.data.data]);
+      setIsModalOpen(false);
+      setFormData({
+        name: '',
+        email: '',
+        department: 'CSE',
+        subjectsInput: '',
+        maxWorkloadPerWeek: 30
+      });
+      alert('Teacher added successfully!');
+    } catch (err) {
+      alert(err.response?.data?.error || 'Failed to add teacher');
+    }
+  };
+
   const filteredTeachers = teachers.filter(t => 
     t.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
     t.department.toLowerCase().includes(searchTerm.toLowerCase())
@@ -42,8 +80,11 @@ const Teachers = () => {
     <div className="space-y-6">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <h1 className="text-2xl font-bold">Teachers Management</h1>
-        <button className="flex items-center justify-center px-4 py-2 bg-primary text-white rounded-lg hover:bg-indigo-700 transition-colors">
-          <FiPlus className="mr-2" /> Add Teacher
+        <button 
+          onClick={() => setIsModalOpen(true)}
+          className="flex items-center justify-center px-4 py-2 bg-primary text-white rounded-lg hover:bg-indigo-700 transition-colors font-bold text-xs shadow-sm"
+        >
+          <FiPlus className="mr-2" size={16} /> Add Teacher
         </button>
       </div>
 
@@ -107,6 +148,98 @@ const Teachers = () => {
           </table>
         </div>
       </div>
+
+      {/* Add Teacher Modal */}
+      {isModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-40 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-white p-8 rounded-3xl shadow-2xl border border-gray-100 max-w-md w-full relative animate-in zoom-in-95 duration-200">
+            <h2 className="text-xl font-bold text-gray-800 mb-6">Add New Teacher</h2>
+            <form onSubmit={handleSubmit} className="space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-gray-500 mb-2">FULL NAME</label>
+                <input 
+                  type="text" 
+                  required
+                  placeholder="e.g. Dr. Anand Vaidya"
+                  className="w-full p-3 bg-gray-50 border border-gray-250 rounded-xl text-sm outline-none focus:ring-2 focus:ring-primary focus:bg-white transition-all"
+                  value={formData.name}
+                  onChange={e => setFormData({...formData, name: e.target.value})}
+                />
+              </div>
+              
+              <div>
+                <label className="block text-xs font-bold text-gray-500 mb-2">EMAIL ADDRESS</label>
+                <input 
+                  type="email" 
+                  required
+                  placeholder="e.g. vaidya@college.edu"
+                  className="w-full p-3 bg-gray-50 border border-gray-250 rounded-xl text-sm outline-none focus:ring-2 focus:ring-primary focus:bg-white transition-all"
+                  value={formData.email}
+                  onChange={e => setFormData({...formData, email: e.target.value})}
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-bold text-gray-500 mb-2">DEPARTMENT</label>
+                  <select 
+                    className="w-full p-3 bg-gray-50 border border-gray-250 rounded-xl text-sm outline-none focus:ring-2 focus:ring-primary focus:bg-white transition-all"
+                    value={formData.department}
+                    onChange={e => setFormData({...formData, department: e.target.value})}
+                  >
+                    <option value="CSE">CSE</option>
+                    <option value="Maths">Maths</option>
+                    <option value="Physics">Physics</option>
+                    <option value="Chemistry">Chemistry</option>
+                    <option value="Electrical">Electrical</option>
+                    <option value="Mechanical">Mechanical</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-gray-500 mb-2">MAX WEEKLY HOURS</label>
+                  <input 
+                    type="number" 
+                    required
+                    min="1" max="40"
+                    className="w-full p-3 bg-gray-50 border border-gray-250 rounded-xl text-sm outline-none focus:ring-2 focus:ring-primary focus:bg-white transition-all"
+                    value={formData.maxWorkloadPerWeek}
+                    onChange={e => setFormData({...formData, maxWorkloadPerWeek: e.target.value})}
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-gray-500 mb-2">SUBJECTS HANDLED (COMMA SEPARATED)</label>
+                <input 
+                  type="text" 
+                  required
+                  placeholder="e.g. Mathematics-I, Mathematics-II"
+                  className="w-full p-3 bg-gray-50 border border-gray-250 rounded-xl text-sm outline-none focus:ring-2 focus:ring-primary focus:bg-white transition-all"
+                  value={formData.subjectsInput}
+                  onChange={e => setFormData({...formData, subjectsInput: e.target.value})}
+                />
+                <p className="text-[10px] text-gray-400 mt-1">Separate subject codes or names with commas.</p>
+              </div>
+
+              <div className="flex justify-end gap-3 pt-4 border-t border-gray-100">
+                <button 
+                  type="button"
+                  onClick={() => setIsModalOpen(false)}
+                  className="px-5 py-2.5 bg-gray-100 hover:bg-gray-200 rounded-xl text-xs font-bold text-gray-600 transition-all"
+                >
+                  Cancel
+                </button>
+                <button 
+                  type="submit"
+                  className="px-5 py-2.5 bg-primary hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-indigo-100"
+                >
+                  Save Teacher
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

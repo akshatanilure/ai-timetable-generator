@@ -36,32 +36,31 @@ const seedData = async () => {
     // 2. Create Users
     const users = await User.insertMany([
       { name: 'Admin', email: 'admin@college.edu', password: 'password123', role: 'admin' },
-      { name: 'Dr. Sharma', email: 'sharma@college.edu', password: 'password123', role: 'teacher' },
-      { name: 'Prof. Patil', email: 'patil@college.edu', password: 'password123', role: 'teacher' },
+      { name: 'Dr. Basavaraj H', email: 'basavaraj@college.edu', password: 'password123', role: 'teacher' },
+      { name: 'Dr. Umakant P Kulkarni', email: 'umakant@college.edu', password: 'password123', role: 'teacher' },
     ]);
     const adminId = users[0]._id;
 
     // 3. Create Teachers
     const teachers = await Teacher.insertMany([
       {
-        name: 'Dr. Sharma',
-        email: 'sharma@college.edu',
+        name: 'Dr. Basavaraj H',
+        email: 'basavaraj@college.edu',
         department: 'Maths',
         subjectsHandled: ['Mathematics-I', 'Mathematics-II'],
         availability: [{ day: 'Monday', slots: [{ startTime: '09:00', endTime: '13:00' }] }],
         user: users[1]._id
       },
       {
-        name: 'Prof. Patil',
-        email: 'patil@college.edu',
-        department: 'Computer Science',
+        name: 'Dr. Umakant P Kulkarni',
+        email: 'umakant@college.edu',
+        department: 'CSE',
         subjectsHandled: ['Programming in C', 'Artificial Intelligence'],
         user: users[2]._id
       },
-      { name: 'Prof. Verma', email: 'verma@college.edu', department: 'Physics', subjectsHandled: ['Engineering Physics'] },
-      { name: 'Dr. Iyer', email: 'iyer@college.edu', department: 'Chemistry', subjectsHandled: ['Engineering Chemistry'] },
-      { name: 'Prof. Das', email: 'das@college.edu', department: 'Mechanical', subjectsHandled: ['Engineering Drawing'] },
-      { name: 'Dr. Khan', email: 'khan@college.edu', department: 'Electrical', subjectsHandled: ['Basic Electrical Engineering'] },
+      { name: 'Dr. Bahubali K M', email: 'bahubali@college.edu', department: 'Physics', subjectsHandled: ['Engineering Physics'] },
+      { name: 'Dr. Asma', email: 'asma@college.edu', department: 'Chemistry', subjectsHandled: ['Engineering Chemistry'] },
+      { name: 'Prof. Sumangala Bhavikatti', email: 'sumangala@college.edu', department: 'Electrical', subjectsHandled: ['Basic Electrical Engineering'] },
     ]);
 
     // 4. Create Subjects
