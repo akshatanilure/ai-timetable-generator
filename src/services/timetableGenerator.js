@@ -18,8 +18,12 @@ class TimetableGenerator {
     this.labEngine = new LabAllocator(this);
 
     // Configuration
+    const semNum = data.divisions[0]?.semester || 1;
+    const is8amStart = [1, 2, 5].includes(semNum);
+    const defaultStartTime = is8amStart ? "08:00" : "09:00";
+
     this.settings = data.settings || {
-      college_start_time: "09:00",
+      college_start_time: defaultStartTime,
       college_end_time: "16:30",
       period_duration: 60,
       short_break_start: "10:00",

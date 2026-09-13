@@ -23,6 +23,13 @@ const teacherSchema = new mongoose.Schema(
     designation: {
       type: String,
     },
+    extraRoles: {
+      type: String,
+    },
+    concessionHours: {
+      type: Number,
+      default: 0,
+    },
     specialization: {
       type: String,
     },

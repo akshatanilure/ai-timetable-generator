@@ -324,7 +324,7 @@ const GenerateTimetable = () => {
                                   disabled={!fixedTimings[sub._id]?.day}
                                 >
                                   <option value="">-- Any Time --</option>
-                                  {["08:00", "09:00", "10:30", "11:30", "14:30", "15:30"].map(t => <option key={t} value={t}>{t}</option>)}
+                                  {["08:00", "09:00", "10:30", "11:30", "12:30", "14:30", "15:30"].map(t => <option key={t} value={t}>{t}</option>)}
                                 </select>
                               </div>
                             </div>

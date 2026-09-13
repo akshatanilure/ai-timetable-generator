@@ -21,34 +21,49 @@ class GenerationRequest(BaseModel):
     labsConfig: List[Dict[str, Any]] = [{"id": 1, "name": "Lab 1", "capacity": 30}, {"id": 2, "name": "Lab 2", "capacity": 30}]
 
 DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
-SLOTS = ["08:00", "09:00", "10:30", "11:30", "14:30", "15:30"]
+SLOTS = ["08:00", "09:00", "10:30", "11:30", "12:30", "14:30", "15:30"]
 
 MAX_DAILY_WORKING_HOURS = 5
-# Valid 2-hour lab start indices: 0 (08:00-10:00), 2 (10:30-12:30), 4 (14:30-16:30)
-# Strictly prevents crossing Short Break (10:00-10:30) and Lunch Break (12:30-14:30)
-VALID_LAB_START_INDICES = [0, 2, 4]
-SATURDAY_VALID_INDICES = [0, 1, 2, 3] 
 
 THEORY_END_TIMES = {
     0: "09:00",
     1: "10:00",
     2: "11:30",
     3: "12:30",
-    4: "15:30",
-    5: "16:30"
+    4: "13:30",
+    5: "15:30",
+    6: "16:30"
 }
 
 LAB_END_TIMES = {
     0: "10:00",
     2: "12:30",
-    4: "16:30"
+    3: "13:30",
+    5: "16:30"
 }
 
-def create_individual(sessions, teachers, faculty_mapping, rooms, fixed_timings, global_start_idx=0):
+def get_semester_timing_config(semester: int = 1):
+    # Odd: 1st & 5th sem -> 8:00 AM; 3rd & 7th sem -> 9:00 AM
+    # Even: 2nd sem -> 8:00 AM; 4th & 6th sem -> 9:00 AM (8th sem -> 9:00 AM)
+    is_8am_start = int(semester) in [1, 2, 5]
+    if is_8am_start:
+        global_start_idx = 0
+        allowed_theory_indices = [0, 1, 2, 3, 5, 6]
+        valid_lab_start_indices = [0, 2, 5]
+        saturday_valid_indices = [0, 1, 2, 3]
+    else:
+        global_start_idx = 1
+        allowed_theory_indices = [1, 2, 3, 4, 5, 6]
+        valid_lab_start_indices = [2, 3, 5]
+        saturday_valid_indices = [1, 2, 3, 4]
+    return global_start_idx, allowed_theory_indices, valid_lab_start_indices, saturday_valid_indices
+
+def create_individual(sessions, teachers, faculty_mapping, rooms, fixed_timings, global_start_idx=0, semester=1):
     timetable = []
     
     div_names = list(set(s.get('division', 'DIV-A') for s in sessions))
     divisions = [{'name': d} for d in div_names]
+    global_start_idx, allowed_theory_indices, valid_lab_start_indices, saturday_valid_indices = get_semester_timing_config(semester)
     div_start_indices = {d: global_start_idx for d in div_names}
     
     full_days_per_div = {}
@@ -74,9 +89,9 @@ def create_individual(sessions, teachers, faculty_mapping, rooms, fixed_timings,
             for f_slot in slots:
                 f_day = f_slot.get('day', '')
                 f_time = f_slot.get('time', '')
-                if f_day and f_time in SLOTS:
+                if f_day in DAYS and f_time in SLOTS:
                     f_idx = SLOTS.index(f_time)
-                    if f_day == 'Saturday' and f_idx not in SATURDAY_VALID_INDICES: continue
+                    if f_day == 'Saturday' and f_idx not in saturday_valid_indices: continue
                     reserved_fixed[div_name].add((f_day, f_idx))
                     if is_minor:
                         reserved_fixed[div_name].add((f_day, f_idx + 1))
@@ -92,10 +107,10 @@ def create_individual(sessions, teachers, faculty_mapping, rooms, fixed_timings,
         lab_slots = []
         for d in DAYS:
             if d == 'Saturday': continue
-            for idx in VALID_LAB_START_INDICES:
+            for idx in valid_lab_start_indices:
                 start_idx = div_start_indices.get(div_name, 0)
                 if idx >= start_idx:
-                    if idx + 1 > 4 and d not in full_days_per_div[div_name]:
+                    if idx + 1 > 5 and d not in full_days_per_div[div_name]:
                         continue
                     lab_slots.append((d, idx))
         random.shuffle(lab_slots)
@@ -211,12 +226,17 @@ def create_individual(sessions, teachers, faculty_mapping, rooms, fixed_timings,
         
         placed = False
         div_fixed_timings = fixed_timings.get(div_name, {})
-        if sub_id in div_fixed_timings and used_fixed[div_name].get(sub_id, 0) < len(div_fixed_timings[sub_id]):
-            f_slot = div_fixed_timings[sub_id][used_fixed[div_name].get(sub_id, 0)]
+        valid_sub_fixed = [
+            t for t in div_fixed_timings.get(sub_id, [])
+            if t.get('day') in DAYS and t.get('time') in SLOTS
+        ]
+        
+        if sub_id in div_fixed_timings and used_fixed[div_name].get(sub_id, 0) < len(valid_sub_fixed):
+            f_slot = valid_sub_fixed[used_fixed[div_name].get(sub_id, 0)]
             used_fixed[div_name][sub_id] = used_fixed[div_name].get(sub_id, 0) + 1
             f_day = f_slot.get('day', '')
             f_time = f_slot.get('time', '')
-            if f_day and f_time in SLOTS:
+            if f_day in DAYS and f_time in SLOTS:
                 f_idx = SLOTS.index(f_time)
                 duration = session.get('duration', 1)
                 
@@ -226,7 +246,7 @@ def create_individual(sessions, teachers, faculty_mapping, rooms, fixed_timings,
                     if chk_idx >= len(SLOTS):
                         can_place = False
                         break
-                    if f_day == 'Saturday' and chk_idx not in SATURDAY_VALID_INDICES:
+                    if f_day == 'Saturday' and chk_idx not in saturday_valid_indices:
                         can_place = False
                         break
                     if (f_day, chk_idx) in occupied[div_name]:
@@ -257,7 +277,7 @@ def create_individual(sessions, teachers, faculty_mapping, rooms, fixed_timings,
             for d in DAYS:
                 if d == 'Saturday': continue
                 if d in full_days_per_div[div_name]:
-                    minor_slots.append((d, 4))
+                    minor_slots.append((d, 5))
             random.shuffle(minor_slots)
             
             for (day, slot_idx) in minor_slots:
@@ -282,15 +302,14 @@ def create_individual(sessions, teachers, faculty_mapping, rooms, fixed_timings,
     for session in non_fixed_theories:
         div_name = session.get('division', 'DIV-A')
         sub_id = str(session['subject'].get('_id'))
-        start_idx = div_start_indices.get(div_name, 0)
         
         available_slots = []
-        for slot_idx in range(start_idx, len(SLOTS)):
+        for slot_idx in allowed_theory_indices:
             if slot_idx >= len(SLOTS): continue
             for day in DAYS:
-                if day == 'Saturday' and slot_idx not in SATURDAY_VALID_INDICES:
+                if day == 'Saturday' and slot_idx not in saturday_valid_indices:
                     continue
-                if day != 'Saturday' and slot_idx > 4 and day not in full_days_per_div[div_name]:
+                if day != 'Saturday' and slot_idx > 5 and day not in full_days_per_div[div_name]:
                     continue
                 available_slots.append((day, slot_idx))
                 
@@ -311,7 +330,8 @@ def create_individual(sessions, teachers, faculty_mapping, rooms, fixed_timings,
 def copy_individual(individual):
     return [dict(entry) for entry in individual]
 
-def pack_individual(individual, global_start_idx=0):
+def pack_individual(individual, global_start_idx=0, semester=1):
+    global_start_idx, allowed_theory_indices, valid_lab_start_indices, saturday_valid_indices = get_semester_timing_config(semester)
     by_div_day = {}
     for entry in individual:
         div = entry['session'].get('division', 'DIV-A')
@@ -336,28 +356,32 @@ def pack_individual(individual, global_start_idx=0):
             
         non_fixed_entries.sort(key=sort_key)
         
-        current_idx = global_start_idx
+        current_allowed_pos = 0
         for entry in non_fixed_entries:
             duration = entry['session'].get('duration', 1)
             while True:
-                if current_idx >= len(SLOTS):
+                if current_allowed_pos >= len(allowed_theory_indices):
                     break
+                current_idx = allowed_theory_indices[current_allowed_pos]
                 fits = True
                 for offset in range(duration):
-                    if (current_idx + offset) in reserved_slots or (current_idx + offset) >= len(SLOTS):
+                    chk_idx = current_idx + offset
+                    if chk_idx not in allowed_theory_indices or chk_idx in reserved_slots:
                         fits = False
                         break
                 if fits:
                     break
-                current_idx += 1
+                current_allowed_pos += 1
             
-            entry['slot_idx'] = current_idx
-            current_idx += duration
+            if current_allowed_pos < len(allowed_theory_indices):
+                entry['slot_idx'] = allowed_theory_indices[current_allowed_pos]
+                current_allowed_pos += duration
             
     return individual
 
-def calculate_fitness(individual, teachers, faculty_max_workloads, global_start_idx=0):
-    pack_individual(individual, global_start_idx)
+def calculate_fitness(individual, teachers, faculty_max_workloads, global_start_idx=0, semester=1):
+    global_start_idx, allowed_theory_indices, valid_lab_start_indices, saturday_valid_indices = get_semester_timing_config(semester)
+    pack_individual(individual, global_start_idx, semester)
     conflicts = 0
     faculty_time = {}
     room_time = {}
@@ -374,17 +398,18 @@ def calculate_fitness(individual, teachers, faculty_max_workloads, global_start_
         for i in range(duration):
             day_slots[div][day].append(slot_idx + i)
             
-        # Check out of bounds slot index
-        if slot_idx + duration > len(SLOTS):
-            conflicts += 20000
+        # Check out of bounds or disallowed slot index
+        for i in range(duration):
+            if (slot_idx + i) not in allowed_theory_indices and entry['session']['type'] != 'lab_group':
+                conflicts += 100000
             
         # Check Saturday limit
-        if day == 'Saturday' and (slot_idx not in SATURDAY_VALID_INDICES or (slot_idx + duration - 1) not in SATURDAY_VALID_INDICES):
+        if day == 'Saturday' and (slot_idx not in saturday_valid_indices or (slot_idx + duration - 1) not in saturday_valid_indices):
             conflicts += 5000
             
         # Check Lab start index limit strictly and limit to 1 lab per batch/division per day
         if entry['session']['type'] == 'lab_group':
-            if slot_idx not in VALID_LAB_START_INDICES:
+            if slot_idx not in valid_lab_start_indices:
                 conflicts += 10000
             if div not in labs_per_day_count: labs_per_day_count[div] = {}
             labs_per_day_count[div][day] = labs_per_day_count[div].get(day, 0) + 1
@@ -441,13 +466,22 @@ def calculate_fitness(individual, teachers, faculty_max_workloads, global_start_
     for div, days in day_slots.items():
         for day, slots in days.items():
             if len(slots) > 0:
+                present_slots = set(slots)
                 min_s, max_s = min(slots), max(slots)
                 if min_s < global_start_idx:
                     conflicts += 100000
-                gaps = (max_s - min_s + 1) - len(set(slots))
+                range_allowed = [s for s in allowed_theory_indices if min_s <= s <= max_s and s != 4]
+                gaps = len(set(range_allowed) - present_slots)
                 conflicts += gaps * 50000
                 if len(set(slots)) > MAX_DAILY_WORKING_HOURS + 2:
                     conflicts += 10
+
+    # Faculty Workload Excess Penalty Check
+    for t_id, slots in faculty_time.items():
+        max_allowed = faculty_max_workloads.get(t_id, 16.0)
+        assigned_hours = len(slots)
+        if assigned_hours > max_allowed:
+            conflicts += int((assigned_hours - max_allowed) * 50000)
     
     return conflicts
 
@@ -455,15 +489,17 @@ def crossover(parent1, parent2):
     split = len(parent1) // 2
     return [dict(e) for e in parent1[:split]] + [dict(e) for e in parent2[split:]]
 
-def mutate(individual, teachers, rooms, global_start_idx=0, mutation_rate=0.1):
+def mutate(individual, teachers, rooms, global_start_idx=0, mutation_rate=0.1, semester=1):
     if random.random() > mutation_rate: return individual
     idx1 = random.randrange(len(individual))
     if individual[idx1].get('fixed'): return individual
     
+    global_start_idx, allowed_theory_indices, valid_lab_start_indices, saturday_valid_indices = get_semester_timing_config(semester)
+    
     div_name = individual[idx1]['session'].get('division', 'DIV-A')
-    available_slots = [(d, s) for d in DAYS for s in range(global_start_idx, len(SLOTS)) if not (d == 'Saturday' and s not in SATURDAY_VALID_INDICES)]
+    available_slots = [(d, s) for d in DAYS for s in allowed_theory_indices if not (d == 'Saturday' and s not in saturday_valid_indices)]
     if individual[idx1]['session']['type'] == 'lab_group':
-        available_slots = [(d, s) for d, s in available_slots if s in VALID_LAB_START_INDICES]
+        available_slots = [(d, s) for d, s in available_slots if s in valid_lab_start_indices]
     
     if available_slots:
         new_slot = random.choice(available_slots)
@@ -473,15 +509,15 @@ def mutate(individual, teachers, rooms, global_start_idx=0, mutation_rate=0.1):
             
     return individual
 
-def run_genetic_algorithm(sessions, teachers, faculty_mapping, rooms, fixed_timings, faculty_max_workloads, global_start_idx=0):
+def run_genetic_algorithm(sessions, teachers, faculty_mapping, rooms, fixed_timings, faculty_max_workloads, global_start_idx=0, semester=1):
     POPULATION_SIZE = 100 
     GENERATIONS = 300
-    population = [create_individual(sessions, teachers, faculty_mapping, rooms, fixed_timings, global_start_idx) for _ in range(POPULATION_SIZE)]
+    population = [create_individual(sessions, teachers, faculty_mapping, rooms, fixed_timings, global_start_idx, semester) for _ in range(POPULATION_SIZE)]
     best_individual = None
     best_fitness = float('inf')
     for generation in range(GENERATIONS):
-        population.sort(key=lambda x: calculate_fitness(x, teachers, faculty_max_workloads, global_start_idx))
-        current_best = calculate_fitness(population[0], teachers, faculty_max_workloads, global_start_idx)
+        population.sort(key=lambda x: calculate_fitness(x, teachers, faculty_max_workloads, global_start_idx, semester))
+        current_best = calculate_fitness(population[0], teachers, faculty_max_workloads, global_start_idx, semester)
         if current_best < best_fitness:
             best_individual = copy_individual(population[0])
             best_fitness = current_best
@@ -584,11 +620,11 @@ def generate_timetable(request: GenerationRequest):
                 for i in range(sub.get("lectureHours", 0) + sub.get("tutorialHours", 0)):
                     sessions.append({"id": f"{div_name}_{sub.get('_id')}_th_{i}", "subject": sub, "type": "theory", "duration": 1, "division": div_name})
                     
-    global_start_idx = 0 if request.semester in [1, 2, 7] else 1
+    global_start_idx, allowed_theory_indices, valid_lab_start_indices, saturday_valid_indices = get_semester_timing_config(request.semester)
                     
-    best_individual = run_genetic_algorithm(sessions, request.teachers, request.facultyMapping, request.rooms, request.fixedTimings, request.facultyMaxWorkloads, global_start_idx)
-    pack_individual(best_individual, global_start_idx)
-    best_fitness = calculate_fitness(best_individual, request.teachers, request.facultyMaxWorkloads, global_start_idx)
+    best_individual = run_genetic_algorithm(sessions, request.teachers, request.facultyMapping, request.rooms, request.fixedTimings, request.facultyMaxWorkloads, global_start_idx, request.semester)
+    pack_individual(best_individual, global_start_idx, request.semester)
+    best_fitness = calculate_fitness(best_individual, request.teachers, request.facultyMaxWorkloads, global_start_idx, request.semester)
     
     matrix = {}
     raw_schedules = {div['name']: [] for div in divs}

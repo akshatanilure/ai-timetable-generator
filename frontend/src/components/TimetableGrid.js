@@ -2,13 +2,20 @@ import React from 'react';
 
 const TimetableGrid = ({ schedule }) => {
   const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+  const has1230Slot = (schedule || []).some(s => s.startTime === '12:30');
+
   const gridSlots = [
     { start: '08:00', end: '09:00', type: 'class' },
     { start: '09:00', end: '10:00', type: 'class' },
     { start: '10:00', end: '10:30', type: 'short_break', label: 'T E A   B R E A K' },
     { start: '10:30', end: '11:30', type: 'class' },
     { start: '11:30', end: '12:30', type: 'class' },
-    { start: '12:30', end: '14:30', type: 'lunch_break', label: 'L U N C H   B R E A K' },
+    ...(has1230Slot ? [
+      { start: '12:30', end: '13:30', type: 'class' },
+      { start: '13:30', end: '14:30', type: 'lunch_break', label: 'L U N C H   B R E A K' }
+    ] : [
+      { start: '12:30', end: '14:30', type: 'lunch_break', label: 'L U N C H   B R E A K' }
+    ]),
     { start: '14:30', end: '15:30', type: 'class' },
     { start: '15:30', end: '16:30', type: 'class' },
   ];
