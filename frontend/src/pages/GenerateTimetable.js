@@ -28,7 +28,8 @@ const GenerateTimetable = () => {
   const [showPreview, setShowPreview] = useState(false);
   const [numDivisions, setNumDivisions] = useState(1);
   const [divisions, setDivisions] = useState([{ name: 'DIV-A', strength: 60 }]);
-  const [specialRoles, setSpecialRoles] = useState({ hod: '', dean: '', mic: '', naac: '' });
+  const [specialRoles, setSpecialRoles] = useState({ hod: '', deans: [''], mic: '', naac: '' });
+  const [numDeans, setNumDeans] = useState(1);
   
   const [fixedTimings, setFixedTimings] = useState({});
   const [peCredits, setPeCredits] = useState(3);
@@ -36,17 +37,48 @@ const GenerateTimetable = () => {
   const [selectedFixSub, setSelectedFixSub] = useState('');
   const [selectedFixDay, setSelectedFixDay] = useState('');
   const [selectedFixTime, setSelectedFixTime] = useState('');
+  const [selectedFixDiv, setSelectedFixDiv] = useState('ALL');
 
   // Multiple view options
   const [activeTab, setActiveTab] = useState('division');
   const [selectedFacultyId, setSelectedFacultyId] = useState('');
   const [selectedRoomId, setSelectedRoomId] = useState('');
 
+  const [allDivisions, setAllDivisions] = useState({});
+  const [allSubjects, setAllSubjects] = useState({});
+  const [savedSemesters, setSavedSemesters] = useState({});
+  const [bySemesterResults, setBySemesterResults] = useState({});
+  const [previewSemester, setPreviewSemester] = useState(1);
+
+  const handleNumDeansChange = (val) => {
+    let count = parseInt(val);
+    if (isNaN(count) || count < 0) count = 0;
+    if (count > 10) count = 10;
+    setNumDeans(count);
+    setSpecialRoles(prev => {
+      const currentDeans = prev.deans || [];
+      const newDeans = [];
+      for (let i = 0; i < count; i++) {
+        newDeans.push(currentDeans[i] || '');
+      }
+      return { ...prev, deans: newDeans };
+    });
+  };
+
+  const handleDeanSelect = (index, value) => {
+    setSpecialRoles(prev => {
+      const currentDeans = [...(prev.deans || [])];
+      currentDeans[index] = value;
+      return { ...prev, deans: currentDeans };
+    });
+  };
+
   const handleCycleChange = (newCycle) => {
     setCycle(newCycle);
     setGenMode('priority');
     const prioritySem = newCycle === 'odd' ? 1 : 2;
     setConfig(prev => ({ ...prev, semester: prioritySem }));
+    setPreviewSemester(prioritySem);
   };
 
   const handleModeChange = (newMode) => {
@@ -54,10 +86,53 @@ const GenerateTimetable = () => {
     if (newMode === 'priority') {
       const prioritySem = cycle === 'odd' ? 1 : 2;
       setConfig(prev => ({ ...prev, semester: prioritySem }));
+      setPreviewSemester(prioritySem);
     } else {
       const groupedDefaultSem = cycle === 'odd' ? 3 : 4;
       setConfig(prev => ({ ...prev, semester: groupedDefaultSem }));
+      setPreviewSemester(groupedDefaultSem);
     }
+  };
+
+  const handleSelectSemester = (semNum) => {
+    const currentSem = config.semester;
+    if (currentSem) {
+      setAllFacultyMappings(prev => ({ ...prev, [currentSem]: facultyMapping }));
+      setAllDivisions(prev => ({ ...prev, [currentSem]: divisions }));
+      setAllFixedTimings(prev => ({ ...prev, [currentSem]: fixedTimings }));
+      setAllSubjects(prev => ({ ...prev, [currentSem]: subjects }));
+    }
+
+    setConfig(prev => ({ ...prev, semester: semNum }));
+
+    if (allDivisions[semNum]) {
+      setDivisions(allDivisions[semNum]);
+      setNumDivisions(allDivisions[semNum].length);
+    } else {
+      setDivisions([{ name: 'DIV-A', strength: 60 }]);
+      setNumDivisions(1);
+    }
+    if (allFacultyMappings[semNum]) {
+      setFacultyMapping(allFacultyMappings[semNum]);
+    }
+    if (allFixedTimings[semNum]) {
+      setFixedTimings(allFixedTimings[semNum]);
+    }
+  };
+
+  const handleSaveSemesterInputs = (semNum) => {
+    const s = semNum || config.semester;
+    setAllDivisions(prev => ({ ...prev, [s]: divisions }));
+    setAllFacultyMappings(prev => ({ ...prev, [s]: facultyMapping }));
+    setAllFixedTimings(prev => ({ ...prev, [s]: fixedTimings }));
+    setAllSubjects(prev => ({ ...prev, [s]: subjects }));
+    setSavedSemesters(prev => ({ ...prev, [s]: true }));
+    alert(`Semester ${s} inputs saved successfully!`);
+  };
+
+  const handleEditSemesterInputs = (semNum) => {
+    const s = semNum || config.semester;
+    setSavedSemesters(prev => ({ ...prev, [s]: false }));
   };
 
   useEffect(() => {
@@ -331,10 +406,11 @@ const GenerateTimetable = () => {
     if (!selectedFixSub || !selectedFixDay || !selectedFixTime) return;
     setFixedTimings(prev => {
       const updated = { ...prev };
-      divisions.forEach(div => {
-        if (!updated[div.name]) updated[div.name] = {};
-        const current = updated[div.name][selectedFixSub] || [];
-        updated[div.name][selectedFixSub] = [...current, { day: selectedFixDay, time: selectedFixTime }];
+      const targetDivs = selectedFixDiv === 'ALL' || !selectedFixDiv ? divisions.map(d => d.name) : [selectedFixDiv];
+      targetDivs.forEach(divName => {
+        if (!updated[divName]) updated[divName] = {};
+        const current = updated[divName][selectedFixSub] || [];
+        updated[divName][selectedFixSub] = [...current, { day: selectedFixDay, time: selectedFixTime }];
       });
       return updated;
     });
@@ -344,6 +420,15 @@ const GenerateTimetable = () => {
   };
 
   const handleGenerate = async () => {
+    if (genMode === 'grouped') {
+      const semsToGenerate = cycle === 'odd' ? [3, 5, 7] : [4, 6];
+      const unsaved = semsToGenerate.filter(s => !savedSemesters[s]);
+      if (unsaved.length > 0) {
+        alert(`Please save inputs semester by semester before generating.\nUnsaved semesters: ${unsaved.map(s => `Semester ${s}`).join(', ')}`);
+        return;
+      }
+    }
+
     setLoading(true);
     setProgress(10);
     setResult(null);
@@ -360,13 +445,17 @@ const GenerateTimetable = () => {
 
       if (genMode === 'priority') {
         const prioritySem = cycle === 'odd' ? 1 : 2;
+        const semDivs = allDivisions[prioritySem] || divisions;
+        const semMapping = allFacultyMappings[prioritySem] || facultyMapping;
+        const semFixed = allFixedTimings[prioritySem] || fixedTimings;
+
         const res = await api.post('/timetables/generate-ml', {
           branch: config.branch,
           semester: prioritySem,
-          facultyMapping,
-          divisions,
+          facultyMapping: semMapping,
+          divisions: semDivs,
           facultyMaxWorkloads,
-          fixedTimings
+          fixedTimings: semFixed
         });
 
         // Automatically save Priority Timetable to DB to lock workloads and rooms
@@ -378,6 +467,10 @@ const GenerateTimetable = () => {
 
         setProgress(100);
         setResult(res.data);
+        setBySemesterResults({
+          [prioritySem]: res.data.data
+        });
+        setPreviewSemester(prioritySem);
         setShowPreview(true);
         alert(`Priority ${prioritySem}${prioritySem === 1 ? 'st' : 'nd'} Semester Timetable generated & saved successfully! Workloads and rooms are now locked for this priority semester.`);
       } else {
@@ -385,20 +478,22 @@ const GenerateTimetable = () => {
         const semsToGenerate = cycle === 'odd' ? [3, 5, 7] : [4, 6];
         const combinedMatrix = {};
         const combinedRawSchedules = {};
+        const newBySemesterResults = {};
         let lastMessage = '';
 
         for (let i = 0; i < semsToGenerate.length; i++) {
           const semNum = semsToGenerate[i];
           setProgress(30 + Math.floor((i / semsToGenerate.length) * 60));
 
-          const semMapping = allFacultyMappings[semNum] || (config.semester === semNum ? facultyMapping : {});
-          const semFixed = allFixedTimings[semNum] || (config.semester === semNum ? fixedTimings : {});
+          const semDivs = allDivisions[semNum] || divisions;
+          const semMapping = allFacultyMappings[semNum] || facultyMapping;
+          const semFixed = allFixedTimings[semNum] || fixedTimings;
 
           const res = await api.post('/timetables/generate-ml', {
             branch: config.branch,
             semester: semNum,
             facultyMapping: semMapping,
-            divisions,
+            divisions: semDivs,
             facultyMaxWorkloads,
             fixedTimings: semFixed
           });
@@ -413,6 +508,7 @@ const GenerateTimetable = () => {
           if (res.data && res.data.data) {
             Object.assign(combinedMatrix, res.data.data.matrix || {});
             Object.assign(combinedRawSchedules, res.data.data.rawSchedules || {});
+            newBySemesterResults[semNum] = res.data.data;
             lastMessage = res.data.message;
           }
         }
@@ -427,8 +523,10 @@ const GenerateTimetable = () => {
             slots: ["08:00", "09:00", "10:30", "11:30", "12:30", "14:30", "15:30"]
           }
         });
+        setBySemesterResults(newBySemesterResults);
+        setPreviewSemester(semsToGenerate[0]);
         setShowPreview(true);
-        alert(`Grouped Timetables for Semesters ${semsToGenerate.join(', ')} generated and saved successfully!`);
+        alert(`Grouped Timetables for Semesters ${semsToGenerate.join(', ')} generated and saved successfully according to their own inputs!`);
       }
     } catch (err) {
       console.error("Generation error:", err);
@@ -545,6 +643,11 @@ const GenerateTimetable = () => {
   };
 
   const getFacultyMaxWorkload = (facultyId) => {
+    if (specialRoles.hod === facultyId) return 12;
+    if (specialRoles.deans && specialRoles.deans.includes(facultyId)) return 12;
+    if (specialRoles.dean === facultyId) return 12;
+    if (specialRoles.mic === facultyId) return 14;
+    if (specialRoles.naac === facultyId) return 14;
     const teacher = faculties.find(f => f._id === facultyId);
     if (teacher && typeof teacher.maxWorkloadPerWeek === 'number' && teacher.maxWorkloadPerWeek > 0 && teacher.maxWorkloadPerWeek <= 24) {
       return teacher.maxWorkloadPerWeek;
@@ -758,27 +861,76 @@ const GenerateTimetable = () => {
               {/* Grouped Semester Selector Pill Tabs */}
               {genMode === 'grouped' && (
                 <div className="bg-indigo-50/60 p-3 rounded-xl border border-indigo-100 space-y-1.5">
-                  <label className="block text-[10px] font-extrabold text-indigo-900 uppercase">
-                    Map Subject & Faculty Inputs For:
+                  <label className="block text-[10px] font-extrabold text-indigo-900 uppercase flex justify-between items-center">
+                    <span>Map Inputs Semester by Semester:</span>
+                    <span className="text-[10px] text-indigo-600 font-bold">
+                      (Saved {(cycle === 'odd' ? [3, 5, 7] : [4, 6]).filter(s => savedSemesters[s]).length}/{(cycle === 'odd' ? [3, 5, 7] : [4, 6]).length})
+                    </span>
                   </label>
                   <div className="flex gap-2">
                     {(cycle === 'odd' ? [3, 5, 7] : [4, 6]).map(semNum => (
                       <button
                         key={semNum}
                         type="button"
-                        onClick={() => setConfig(prev => ({ ...prev, semester: semNum }))}
-                        className={`flex-1 py-1.5 px-2 rounded-lg text-xs font-extrabold transition-all ${
+                        onClick={() => handleSelectSemester(semNum)}
+                        className={`flex-1 py-2 px-2 rounded-lg text-xs font-extrabold transition-all flex flex-col items-center gap-1 ${
                           config.semester === semNum
                             ? 'bg-indigo-600 text-white shadow-sm'
                             : 'bg-white text-indigo-800 border border-indigo-200 hover:bg-indigo-100'
                         }`}
                       >
-                        Sem {semNum}
+                        <span>Sem {semNum}</span>
+                        {savedSemesters[semNum] ? (
+                          <span className="text-[9px] bg-green-500 text-white px-1.5 py-0.5 rounded-full font-bold">✓ Saved</span>
+                        ) : (
+                          <span className="text-[9px] bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded-full font-medium">Unsaved</span>
+                        )}
                       </button>
                     ))}
                   </div>
                 </div>
               )}
+
+              {/* Save & Edit Semester Configuration Card */}
+              <div className="bg-gradient-to-r from-indigo-50 to-purple-50 p-4 rounded-xl border border-indigo-100 space-y-3">
+                <div className="flex justify-between items-center">
+                  <div>
+                    <h4 className="text-xs font-black text-indigo-950 uppercase tracking-wider">
+                      Sem {config.semester} Configuration Status
+                    </h4>
+                    <p className="text-[10px] text-indigo-700">Save inputs for Semester {config.semester} before generating.</p>
+                  </div>
+                  {savedSemesters[config.semester] ? (
+                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-green-100 text-green-800 border border-green-200">
+                      <FiCheckCircle className="mr-1 text-green-600" /> Saved
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-200">
+                      Unsaved
+                    </span>
+                  )}
+                </div>
+
+                <div className="flex gap-2">
+                  {savedSemesters[config.semester] ? (
+                    <button
+                      type="button"
+                      onClick={() => handleEditSemesterInputs(config.semester)}
+                      className="w-full py-2 px-3 bg-white hover:bg-gray-50 text-indigo-700 border border-indigo-200 text-xs font-bold rounded-lg transition-all shadow-sm"
+                    >
+                      Edit Sem {config.semester} Inputs
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => handleSaveSemesterInputs(config.semester)}
+                      className="w-full py-2 px-3 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-extrabold rounded-lg shadow-md transition-all flex items-center justify-center gap-1.5"
+                    >
+                      <FiCheckCircle /> Save Sem {config.semester} Inputs
+                    </button>
+                  )}
+                </div>
+              </div>
 
               <div>
                 <label className="block text-xs font-bold text-gray-600 mb-2">Branch</label>
@@ -833,17 +985,49 @@ const GenerateTimetable = () => {
                 </div>
               )}
               
-               <div className="pt-4 border-t border-gray-100">
-                 <h3 className="text-sm font-bold text-gray-700 mb-3">Assign Faculty Roles</h3>
+               <div className="pt-4 border-t border-gray-100 space-y-3">
+                 <h3 className="text-sm font-bold text-gray-700">Assign Faculty Roles</h3>
                  <div className="grid grid-cols-1 gap-3">
                     <div>
                       <label className="block text-[10px] font-bold text-gray-500 mb-1">HOD (Max 12 hrs/week)</label>
                       <Select options={faculties.map(f => ({value: f._id, label: f.name}))} onChange={v => setSpecialRoles(p => ({...p, hod: v?.value}))} isClearable isSearchable placeholder="Search HOD..." className="text-xs" />
                     </div>
-                    <div>
-                      <label className="block text-[10px] font-bold text-gray-500 mb-1">Dean (Max 10 hrs/week)</label>
-                      <Select options={faculties.map(f => ({value: f._id, label: f.name}))} onChange={v => setSpecialRoles(p => ({...p, dean: v?.value}))} isClearable isSearchable placeholder="Search Dean..." className="text-xs" />
+
+                    {/* Number of Deans Input & Dean Selection Options */}
+                    <div className="bg-indigo-50/60 p-3 rounded-xl border border-indigo-100 space-y-2.5">
+                      <div>
+                        <label className="block text-[11px] font-extrabold text-indigo-900 mb-1">
+                          Number of Deans
+                        </label>
+                        <input
+                          type="number"
+                          min="0"
+                          max="10"
+                          value={numDeans}
+                          onChange={e => handleNumDeansChange(e.target.value)}
+                          className="w-full p-2 bg-white border border-indigo-200 rounded-lg text-xs font-bold text-indigo-900 outline-none focus:border-indigo-500"
+                          placeholder="Enter number of Deans"
+                        />
+                      </div>
+
+                      {numDeans > 0 && Array.from({ length: numDeans }).map((_, idx) => (
+                        <div key={idx} className="space-y-1">
+                          <label className="block text-[10px] font-bold text-indigo-800">
+                            Dean {numDeans > 1 ? idx + 1 : ''} Faculty Member (Max 12 hrs/week)
+                          </label>
+                          <Select
+                            options={faculties.map(f => ({ value: f._id, label: f.name }))}
+                            value={faculties.filter(f => f._id === (specialRoles.deans?.[idx] || '')).map(f => ({ value: f._id, label: f.name }))[0] || null}
+                            onChange={v => handleDeanSelect(idx, v?.value || '')}
+                            isClearable
+                            isSearchable
+                            placeholder={`Search Dean ${numDeans > 1 ? idx + 1 : ''}...`}
+                            className="text-xs"
+                          />
+                        </div>
+                      ))}
                     </div>
+
                     <div>
                       <label className="block text-[10px] font-bold text-gray-500 mb-1">MIC + Asst. Prof (Max 14 hrs/week)</label>
                       <Select options={faculties.map(f => ({value: f._id, label: f.name}))} onChange={v => setSpecialRoles(p => ({...p, mic: v?.value}))} isClearable isSearchable placeholder="Search MIC..." className="text-xs" />
@@ -1104,17 +1288,100 @@ const GenerateTimetable = () => {
                 </div>
               ))}
 
-              {/* Generic Input for other subjects */}
+              {/* Extra / Special Subjects (e.g. UHV, EVS) - Per Division Timing Inputs */}
+              {(() => {
+                const extraSubjects = subjects.filter(s => {
+                  const code = (s.subjectCode || '').toUpperCase();
+                  const name = (s.subjectName || '').toLowerCase();
+                  return name.includes('uhv') || name.includes('human') || name.includes('universal') || 
+                         name.includes('environment') || name.includes('evs') || name.includes('constitution') || 
+                         name.includes('audit') || name.includes('value') || name.includes('kanaka') || 
+                         code.includes('UHV') || code.includes('AECC') || code.includes('HS') || code.includes('EVS');
+                });
+
+                if (extraSubjects.length === 0) return null;
+
+                return (
+                  <div className="mb-6 bg-purple-50 p-4 rounded-xl border border-purple-100 space-y-4">
+                    <div className="border-b border-purple-100 pb-2">
+                      <h4 className="text-xs font-black text-purple-900 uppercase tracking-wider">
+                        Extra Subject Timings (UHV, EVS, Audit Courses)
+                      </h4>
+                      <p className="text-[11px] text-purple-700 font-medium">
+                        Set timings separately for each division ({divisions.length} division{divisions.length > 1 ? 's' : ''} = {divisions.length} timing input{divisions.length > 1 ? 's' : ''}).
+                      </p>
+                    </div>
+
+                    {extraSubjects.map(subject => {
+                      const totalHours = (subject.lectureHours || 0) + (subject.tutorialHours || 0) || 1;
+                      return (
+                        <div key={subject._id} className="bg-white p-3 rounded-lg border border-purple-100 shadow-sm space-y-3">
+                          <h5 className="text-xs font-bold text-purple-900 border-b border-purple-50 pb-1 flex justify-between">
+                            <span>{subject.subjectName} ({subject.subjectCode})</span>
+                            <span className="text-[10px] text-purple-600 font-bold">{totalHours} hr/week per div</span>
+                          </h5>
+                          
+                          <div className="space-y-2">
+                            {divisions.map((div) => (
+                              <div key={div.name} className="bg-purple-50/50 p-2.5 rounded-lg border border-purple-100 flex flex-col gap-1.5">
+                                <span className="text-[11px] font-extrabold text-purple-950">
+                                  Division {div.name} Timing Input:
+                                </span>
+                                {Array.from({ length: totalHours }).map((_, i) => (
+                                  <div key={i} className="flex gap-2 items-center">
+                                    <span className="text-[10px] text-purple-700 font-bold w-12">Slot {i + 1}</span>
+                                    <select 
+                                      className="min-w-0 p-1.5 bg-white border border-purple-200 rounded text-xs flex-1 outline-none font-medium text-gray-800"
+                                      value={fixedTimings[div.name]?.[subject._id]?.[i]?.day || ''}
+                                      onChange={e => handleFixedTimingChange(div.name, subject._id, i, 'day', e.target.value)}
+                                    >
+                                      <option value="">Select Day</option>
+                                      <option value="N/A">N/A</option>
+                                      <option value="Monday">Mon</option>
+                                      <option value="Tuesday">Tue</option>
+                                      <option value="Wednesday">Wed</option>
+                                      <option value="Thursday">Thu</option>
+                                      <option value="Friday">Fri</option>
+                                      <option value="Saturday">Sat</option>
+                                    </select>
+                                    <select 
+                                      className="min-w-0 p-1.5 bg-white border border-purple-200 rounded text-xs flex-1 outline-none font-medium text-gray-800"
+                                      value={fixedTimings[div.name]?.[subject._id]?.[i]?.time || ''}
+                                      onChange={e => handleFixedTimingChange(div.name, subject._id, i, 'time', e.target.value)}
+                                    >
+                                      <option value="">Select Time</option>
+                                      <option value="N/A">N/A</option>
+                                      {["08:00", "09:00", "10:30", "11:30", "12:30", "14:30", "15:30"].map(t => <option key={t} value={t}>{t}</option>)}
+                                    </select>
+                                  </div>
+                                ))}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              })()}
+
+              {/* Generic Input for other subjects per division */}
               <div className="pt-2 border-t border-gray-100 mt-2">
-                <h4 className="text-[10px] font-bold text-gray-400 uppercase mb-2">Other Subjects</h4>
+                <h4 className="text-[10px] font-bold text-gray-400 uppercase mb-2">Custom Slot Timings per Division</h4>
                 <div className="flex flex-col gap-2 mb-3">
-                   <select className="p-2 bg-gray-50 border border-gray-200 rounded text-xs outline-none" value={selectedFixSub} onChange={e => setSelectedFixSub(e.target.value)}>
-                     <option value="">-- Select Subject --</option>
-                     {subjects.map(s => <option key={s._id} value={s._id}>{s.subjectName}</option>)}
-                   </select>
                    <div className="flex gap-2">
-                     <select className="min-w-0 p-2 bg-gray-50 border border-gray-200 rounded text-xs flex-1 outline-none" value={selectedFixDay} onChange={e => setSelectedFixDay(e.target.value)}>
-                       <option value="">Day</option>
+                     <select className="p-2 bg-gray-50 border border-gray-200 rounded text-xs flex-1 outline-none font-medium" value={selectedFixDiv} onChange={e => setSelectedFixDiv(e.target.value)}>
+                       <option value="ALL">All Divisions</option>
+                       {divisions.map(d => <option key={d.name} value={d.name}>{d.name} Only</option>)}
+                     </select>
+                     <select className="p-2 bg-gray-50 border border-gray-200 rounded text-xs flex-1 outline-none font-medium" value={selectedFixSub} onChange={e => setSelectedFixSub(e.target.value)}>
+                       <option value="">-- Select Subject --</option>
+                       {subjects.map(s => <option key={s._id} value={s._id}>{s.subjectName}</option>)}
+                     </select>
+                   </div>
+                   <div className="flex gap-2">
+                     <select className="min-w-0 p-2 bg-gray-50 border border-gray-200 rounded text-xs flex-1 outline-none font-medium" value={selectedFixDay} onChange={e => setSelectedFixDay(e.target.value)}>
+                       <option value="">Select Day</option>
                        <option value="N/A">N/A</option>
                        <option value="Monday">Mon</option>
                        <option value="Tuesday">Tue</option>
@@ -1123,35 +1390,48 @@ const GenerateTimetable = () => {
                        <option value="Friday">Fri</option>
                        <option value="Saturday">Sat</option>
                      </select>
-                     <select className="min-w-0 p-2 bg-gray-50 border border-gray-200 rounded text-xs flex-1 outline-none" value={selectedFixTime} onChange={e => setSelectedFixTime(e.target.value)}>
-                       <option value="">Time</option>
+                     <select className="min-w-0 p-2 bg-gray-50 border border-gray-200 rounded text-xs flex-1 outline-none font-medium" value={selectedFixTime} onChange={e => setSelectedFixTime(e.target.value)}>
+                       <option value="">Select Time</option>
                        <option value="N/A">N/A</option>
                        {["08:00", "09:00", "10:30", "11:30", "12:30", "14:30", "15:30"].map(t => <option key={t} value={t}>{t}</option>)}
                      </select>
                    </div>
-                   <button onClick={addFixedTiming} className="bg-gray-600 hover:bg-gray-700 text-white px-3 py-2 rounded text-xs font-bold transition-colors">Add Custom Slot</button>
+                   <button onClick={addFixedTiming} className="bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-2 rounded text-xs font-bold transition-colors shadow-sm">
+                     Add Division Slot Timing
+                   </button>
                 </div>
               </div>
               
-              <div className="space-y-1">
-                {Object.keys(fixedTimings['DIV-A'] || {}).map(subId => {
-                  const validSlots = (fixedTimings['DIV-A'][subId] || []).filter(t => t.day && t.day !== 'N/A' && t.time && t.time !== 'N/A');
-                  if (validSlots.length === 0) return null;
-                  return (
-                    <div key={subId} className="text-[10px] text-gray-600 bg-gray-50 p-2 rounded border border-gray-200 flex justify-between items-center">
-                      <div>
-                        <strong className="block text-indigo-700 mb-1">{subjects.find(s => s._id === subId)?.subjectName}</strong> 
-                        {validSlots.map(t => `${t.day} @ ${t.time}`).join(' | ')}
+              <div className="space-y-1.5">
+                {divisions.map(div => {
+                  const divTimings = fixedTimings[div.name] || {};
+                  return Object.keys(divTimings).map(subId => {
+                    const validSlots = (divTimings[subId] || []).filter(t => t.day && t.day !== 'N/A' && t.time && t.time !== 'N/A');
+                    if (validSlots.length === 0) return null;
+                    const subName = subjects.find(s => s._id === subId)?.subjectName || 'Subject';
+                    return (
+                      <div key={`${div.name}-${subId}`} className="text-[10px] text-gray-700 bg-gray-50 p-2 rounded-lg border border-gray-200 flex justify-between items-center">
+                        <div>
+                          <strong className="text-indigo-800 font-bold">[{div.name}] {subName}: </strong> 
+                          <span className="font-medium text-gray-600">{validSlots.map(t => `${t.day} @ ${t.time}`).join(' | ')}</span>
+                        </div>
+                        <button 
+                          onClick={() => {
+                            setFixedTimings(prev => {
+                              const updated = { ...prev };
+                              if (updated[div.name]) {
+                                delete updated[div.name][subId];
+                              }
+                              return updated;
+                            });
+                          }} 
+                          className="text-red-500 hover:text-red-700 font-bold p-1"
+                        >
+                          ✕
+                        </button>
                       </div>
-                      <button onClick={() => {
-                         const newTimings = {...fixedTimings};
-                         if (newTimings['DIV-A']) {
-                            delete newTimings['DIV-A'][subId];
-                         }
-                         setFixedTimings(newTimings);
-                      }} className="text-red-500 hover:text-red-700 font-bold p-1">✕</button>
-                    </div>
-                  );
+                    );
+                  });
                 })}
               </div>
             </div>
@@ -1216,168 +1496,205 @@ const GenerateTimetable = () => {
                 </button>
               </div>
 
-              {/* Division-wise Timetables */}
-              {activeTab === 'division' && showPreview && result.data?.matrix && Object.keys(result.data.matrix).map(divId => {
-                const division = result.data.matrix[divId];
-                const days = Object.keys(division.days);
-
-                return (
-                  <div key={divId} id="timetable-preview" className="bg-white p-6 rounded-2xl shadow-sm border border-gray-200 overflow-x-auto">
-                    <div className="mb-4 text-center">
-                      <h2 className="text-2xl font-black text-gray-800">Class Timetable - {config.branch} Sem {config.semester}</h2>
-                      <p className="text-gray-500 font-medium">Division: {division.divisionName}</p>
+              {/* Semester Selector Bar for Preview */}
+              {genMode === 'grouped' && (
+                <div className="bg-white p-4 rounded-xl border border-indigo-100 shadow-sm flex flex-col md:flex-row items-center justify-between gap-3">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-black text-indigo-900 uppercase tracking-wider">Select Semester Timetable:</span>
+                    <div className="flex gap-2">
+                      {(cycle === 'odd' ? [3, 5, 7] : [4, 6]).map(semNum => (
+                        <button
+                          key={semNum}
+                          type="button"
+                          onClick={() => setPreviewSemester(semNum)}
+                          className={`px-3.5 py-1.5 rounded-lg text-xs font-extrabold transition-all flex items-center gap-1.5 ${
+                            previewSemester === semNum
+                              ? 'bg-indigo-600 text-white shadow-md scale-[1.03]'
+                              : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                          }`}
+                        >
+                          <span>Sem {semNum} Timetable</span>
+                        </button>
+                      ))}
                     </div>
-                    {(() => {
-                      const divHas1230 = Object.values(division.days || {}).some(dayObj => dayObj && dayObj["12:30"] && dayObj["12:30"].type !== "busy");
-                      return (
-                        <>
-                          <table className="w-full text-left border-collapse min-w-[800px] text-xs">
-                            <thead>
-                              <tr>
-                                <th className="border border-gray-400 p-2 bg-gray-50 font-bold text-gray-700 text-center w-16">Days</th>
-                                <th className="border border-gray-400 p-2 bg-white font-bold text-center"><div className="flex flex-col"><span>8:00 to</span><span>9:00 AM</span></div></th>
-                                <th className="border border-gray-400 p-2 bg-white font-bold text-center"><div className="flex flex-col"><span>9:00 to</span><span>10:00 AM</span></div></th>
-                                <th className="border border-gray-400 p-2 bg-white font-bold text-center"><div className="flex flex-col"><span>10:00 AM</span><span>10:30 AM</span></div></th>
-                                <th className="border border-gray-400 p-2 bg-white font-bold text-center"><div className="flex flex-col"><span>10:30 to</span><span>11:30 AM</span></div></th>
-                                <th className="border border-gray-400 p-2 bg-white font-bold text-center"><div className="flex flex-col"><span>11:30 to</span><span>12:30 PM</span></div></th>
-                                {divHas1230 ? (
-                                  <>
-                                    <th className="border border-gray-400 p-2 bg-white font-bold text-center"><div className="flex flex-col"><span>12:30 to</span><span>1:30 PM</span></div></th>
-                                    <th className="border border-gray-400 p-2 bg-white font-bold text-center"><div className="flex flex-col"><span>1:30 to</span><span>2:30 PM</span></div></th>
-                                  </>
-                                ) : (
-                                  <th className="border border-gray-400 p-2 bg-white font-bold text-center"><div className="flex flex-col"><span>12:30 to</span><span>2:30 PM</span></div></th>
-                                )}
-                                <th className="border border-gray-400 p-2 bg-white font-bold text-center"><div className="flex flex-col"><span>2:30 to</span><span>3:30 PM</span></div></th>
-                                <th className="border border-gray-400 p-2 bg-white font-bold text-center"><div className="flex flex-col"><span>3:30 to</span><span>4:30 PM</span></div></th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'].map((day, dayIndex) => {
-                                const daySlots = [
-                                  { time: '08:00', type: 'class' },
-                                  { time: '09:00', type: 'class' },
-                                  { type: 'break', label: 'T E A   B R E A K' },
-                                  { time: '10:30', type: 'class' },
-                                  { time: '11:30', type: 'class' },
-                                  ...(divHas1230 ? [
-                                    { time: '12:30', type: 'class' },
-                                    { type: 'break', label: 'L U N C H   B R E A K' }
-                                  ] : [
-                                    { type: 'break', label: 'L U N C H   B R E A K' }
-                                  ]),
-                                  { time: '14:30', type: 'class' },
-                                  { time: '15:30', type: 'class' }
-                                ];
-                            
-                            let skipNext = false;
+                  </div>
+                  <span className="text-xs font-bold text-gray-500">
+                    Showing separate timetable for <span className="text-indigo-600">Semester {previewSemester}</span>
+                  </span>
+                </div>
+              )}
 
-                            return (
-                              <tr key={day}>
-                                <td className="border border-gray-400 p-2 font-bold text-gray-800 bg-gray-50 text-center">{day.substring(0,3)}</td>
-                                {daySlots.map((slot, index) => {
-                                  if (slot.type === 'break') {
-                                    if (dayIndex === 0) {
-                                      return <td key={index} rowSpan="6" className="border border-gray-400 bg-white text-center text-[10px] font-bold tracking-[0.2em]" style={{ writingMode: 'vertical-rl', textOrientation: 'upright' }}>{slot.label}</td>;
-                                    }
-                                    return null;
-                                  }
+              {/* Division-wise Timetables */}
+              {activeTab === 'division' && showPreview && (() => {
+                const currentData = bySemesterResults[previewSemester] || result?.data;
+                const currentMatrix = currentData?.matrix;
+                const currentSubjects = allSubjects[previewSemester] || subjects;
+                const currentMapping = allFacultyMappings[previewSemester] || facultyMapping;
 
-                                  if (skipNext) {
-                                    skipNext = false;
-                                    return null;
-                                  }
+                if (!currentMatrix) return null;
 
-                                  const cell = division.days[day][slot.time];
-                                  
-                                  if (cell?.type === 'busy') return null;
+                return Object.keys(currentMatrix).map(divId => {
+                  const division = currentMatrix[divId];
+                  const days = Object.keys(division.days);
 
-                                  if (!cell) {
-                                    return <td key={index} className="border border-gray-400 p-1 bg-white text-center text-gray-300"></td>;
-                                  }
-
-                                  const isLab = cell.type === 'lab';
-                                  const colSpan = isLab ? 2 : 1;
-                                  if (isLab) skipNext = true;
-                                  
-                                  const facNames = Array.isArray(cell.faculty) ? cell.faculty.filter(f=>f).map(f => f.name || '').join(' / ') : (cell.faculty?.name || '');
-                                  const roomString = Array.isArray(cell.room) 
-                                    ? cell.room.filter(r=>r).map(r => (r.roomNumber || '').replace('R', '')).join('/') 
-                                    : (cell.room?.roomNumber || '').replace('R', '');
-
-                                  return (
-                                    <td key={index} colSpan={colSpan} className={`border border-gray-400 p-1 text-center align-middle ${isLab ? 'bg-indigo-50' : 'bg-white'}`}>
-                                      <div className="font-bold text-[11px] text-gray-800">{cell.subject?.subjectCode || ''}{roomString ? ` (R N ${roomString})` : ''}</div>
-                                      <div className="text-[10px] text-gray-600 mt-1">{facNames}</div>
-                                    </td>
-                                  );
-                                })}
-                              </tr>
-                            );
-                          })}
-                        </tbody>
-                      </table>
-
-                      {/* Faculty-Course-Credit Table */}
-                      <div className="mt-8 border-t border-gray-200 pt-6">
-                        <h3 className="text-base font-black text-gray-800 mb-3 text-center">Faculty - Course - Credit Mapping</h3>
-                        <table className="w-full text-left border-collapse text-xs">
-                          <thead>
-                            <tr className="bg-gray-50 font-bold text-gray-700">
-                              <th className="border border-gray-400 p-2 text-center w-32">Course Code</th>
-                              <th className="border border-gray-400 p-2">Course Title</th>
-                              <th className="border border-gray-400 p-2 text-center w-20">Credits</th>
-                              <th className="border border-gray-400 p-2 text-center w-24">L-T-P</th>
-                              <th className="border border-gray-400 p-2">Course Instructor</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {subjects.map(sub => {
-                              const instructors = [];
-                              const map = facultyMapping[division.divisionName]?.[sub._id] || {};
-                              if (map.theory) {
-                                const fac = faculties.find(f => f._id === map.theory);
-                                if (fac) instructors.push(fac.name);
-                              }
-                              if (map.lab && map.lab.length > 0) {
-                                map.lab.forEach(id => {
-                                  if (id) {
-                                    const fac = faculties.find(f => f._id === id);
-                                    if (fac && !instructors.includes(fac.name)) instructors.push(fac.name);
-                                  }
-                                });
-                              }
-                              const instructorName = instructors.length > 0 ? instructors.join(' / ') : 'TBD';
+                  return (
+                    <div key={divId} id="timetable-preview" className="bg-white p-6 rounded-2xl shadow-sm border border-gray-200 overflow-x-auto">
+                      <div className="mb-4 text-center">
+                        <h2 className="text-2xl font-black text-gray-800">Class Timetable - {config.branch} Sem {previewSemester}</h2>
+                        <p className="text-gray-500 font-medium">Division: {division.divisionName}</p>
+                      </div>
+                      {(() => {
+                        const divHas1230 = Object.values(division.days || {}).some(dayObj => dayObj && dayObj["12:30"] && dayObj["12:30"].type !== "busy");
+                        return (
+                          <>
+                            <table className="w-full text-left border-collapse min-w-[800px] text-xs">
+                              <thead>
+                                <tr>
+                                  <th className="border border-gray-400 p-2 bg-gray-50 font-bold text-gray-700 text-center w-16">Days</th>
+                                  <th className="border border-gray-400 p-2 bg-white font-bold text-center"><div className="flex flex-col"><span>8:00 to</span><span>9:00 AM</span></div></th>
+                                  <th className="border border-gray-400 p-2 bg-white font-bold text-center"><div className="flex flex-col"><span>9:00 to</span><span>10:00 AM</span></div></th>
+                                  <th className="border border-gray-400 p-2 bg-white font-bold text-center"><div className="flex flex-col"><span>10:00 AM</span><span>10:30 AM</span></div></th>
+                                  <th className="border border-gray-400 p-2 bg-white font-bold text-center"><div className="flex flex-col"><span>10:30 to</span><span>11:30 AM</span></div></th>
+                                  <th className="border border-gray-400 p-2 bg-white font-bold text-center"><div className="flex flex-col"><span>11:30 to</span><span>12:30 PM</span></div></th>
+                                  {divHas1230 ? (
+                                    <>
+                                      <th className="border border-gray-400 p-2 bg-white font-bold text-center"><div className="flex flex-col"><span>12:30 to</span><span>1:30 PM</span></div></th>
+                                      <th className="border border-gray-400 p-2 bg-white font-bold text-center"><div className="flex flex-col"><span>1:30 to</span><span>2:30 PM</span></div></th>
+                                    </>
+                                  ) : (
+                                    <th className="border border-gray-400 p-2 bg-white font-bold text-center"><div className="flex flex-col"><span>12:30 to</span><span>2:30 PM</span></div></th>
+                                  )}
+                                  <th className="border border-gray-400 p-2 bg-white font-bold text-center"><div className="flex flex-col"><span>2:30 to</span><span>3:30 PM</span></div></th>
+                                  <th className="border border-gray-400 p-2 bg-white font-bold text-center"><div className="flex flex-col"><span>3:30 to</span><span>4:30 PM</span></div></th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'].map((day, dayIndex) => {
+                                  const daySlots = [
+                                    { time: '08:00', type: 'class' },
+                                    { time: '09:00', type: 'class' },
+                                    { type: 'break', label: 'T E A   B R E A K' },
+                                    { time: '10:30', type: 'class' },
+                                    { time: '11:30', type: 'class' },
+                                    ...(divHas1230 ? [
+                                      { time: '12:30', type: 'class' },
+                                      { type: 'break', label: 'L U N C H   B R E A K' }
+                                    ] : [
+                                      { type: 'break', label: 'L U N C H   B R E A K' }
+                                    ]),
+                                    { time: '14:30', type: 'class' },
+                                    { time: '15:30', type: 'class' }
+                                  ];
+                              
+                              let skipNext = false;
 
                               return (
-                                <tr key={sub._id}>
-                                  <td className="border border-gray-400 p-2 text-center font-mono">{sub.subjectCode}</td>
-                                  <td className="border border-gray-400 p-2 font-medium">{sub.subjectName}</td>
-                                  <td className="border border-gray-400 p-2 text-center">{sub.credits}</td>
-                                  <td className="border border-gray-400 p-2 text-center font-mono">{getLTP(sub)}</td>
-                                  <td className="border border-gray-400 p-2">{instructorName}</td>
+                                <tr key={day}>
+                                  <td className="border border-gray-400 p-2 font-bold text-gray-800 bg-gray-50 text-center">{day.substring(0,3)}</td>
+                                  {daySlots.map((slot, index) => {
+                                    if (slot.type === 'break') {
+                                      if (dayIndex === 0) {
+                                        return <td key={index} rowSpan="6" className="border border-gray-400 bg-white text-center text-[10px] font-bold tracking-[0.2em]" style={{ writingMode: 'vertical-rl', textOrientation: 'upright' }}>{slot.label}</td>;
+                                      }
+                                      return null;
+                                    }
+
+                                    if (skipNext) {
+                                      skipNext = false;
+                                      return null;
+                                    }
+
+                                    const cell = division.days[day][slot.time];
+                                    
+                                    if (cell?.type === 'busy') return null;
+
+                                    if (!cell) {
+                                      return <td key={index} className="border border-gray-400 p-1 bg-white text-center text-gray-300"></td>;
+                                    }
+
+                                    const isLab = cell.type === 'lab';
+                                    const colSpan = isLab ? 2 : 1;
+                                    if (isLab) skipNext = true;
+                                    
+                                    const facNames = Array.isArray(cell.faculty) ? cell.faculty.filter(f=>f).map(f => f.name || '').join(' / ') : (cell.faculty?.name || '');
+                                    const roomString = Array.isArray(cell.room) 
+                                      ? cell.room.filter(r=>r).map(r => (r.roomNumber || '').replace('R', '')).join('/') 
+                                      : (cell.room?.roomNumber || '').replace('R', '');
+
+                                    return (
+                                      <td key={index} colSpan={colSpan} className={`border border-gray-400 p-1 text-center align-middle ${isLab ? 'bg-indigo-50' : 'bg-white'}`}>
+                                        <div className="font-bold text-[11px] text-gray-800">{cell.subject?.subjectCode || ''}{roomString ? ` (R N ${roomString})` : ''}</div>
+                                        <div className="text-[10px] text-gray-600 mt-1">{facNames}</div>
+                                      </td>
+                                    );
+                                  })}
                                 </tr>
                               );
                             })}
-                            <tr className="bg-gray-50 font-bold">
-                              <td colSpan="2" className="border border-gray-400 p-2 text-right">Total</td>
-                              <td className="border border-gray-400 p-2 text-center">
-                                {subjects.reduce((sum, sub) => {
-                                  const val = parseFloat(sub.credits);
-                                  return isNaN(val) ? sum : sum + val;
-                                }, 0)}
-                              </td>
-                              <td colSpan="2" className="border border-gray-400 p-2"></td>
-                            </tr>
                           </tbody>
                         </table>
-                      </div>
-                    </>
-                  );
-                })()}
-              </div>
-            );
-          })}
+
+                        {/* Faculty-Course-Credit Table */}
+                        <div className="mt-8 border-t border-gray-200 pt-6">
+                          <h3 className="text-base font-black text-gray-800 mb-3 text-center">Faculty - Course - Credit Mapping (Sem {previewSemester})</h3>
+                          <table className="w-full text-left border-collapse text-xs">
+                            <thead>
+                              <tr className="bg-gray-50 font-bold text-gray-700">
+                                <th className="border border-gray-400 p-2 text-center w-32">Course Code</th>
+                                <th className="border border-gray-400 p-2">Course Title</th>
+                                <th className="border border-gray-400 p-2 text-center w-20">Credits</th>
+                                <th className="border border-gray-400 p-2 text-center w-24">L-T-P</th>
+                                <th className="border border-gray-400 p-2">Course Instructor</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {currentSubjects.map(sub => {
+                                const instructors = [];
+                                const map = (currentMapping[division.divisionName] || {})[sub._id] || {};
+                                if (map.theory) {
+                                  const fac = faculties.find(f => f._id === map.theory);
+                                  if (fac) instructors.push(fac.name);
+                                }
+                                if (map.lab && map.lab.length > 0) {
+                                  map.lab.forEach(id => {
+                                    if (id) {
+                                      const fac = faculties.find(f => f._id === id);
+                                      if (fac && !instructors.includes(fac.name)) instructors.push(fac.name);
+                                    }
+                                  });
+                                }
+                                const instructorName = instructors.length > 0 ? instructors.join(' / ') : 'TBD';
+
+                                return (
+                                  <tr key={sub._id}>
+                                    <td className="border border-gray-400 p-2 text-center font-mono">{sub.subjectCode}</td>
+                                    <td className="border border-gray-400 p-2 font-medium">{sub.subjectName}</td>
+                                    <td className="border border-gray-400 p-2 text-center">{sub.credits}</td>
+                                    <td className="border border-gray-400 p-2 text-center font-mono">{getLTP(sub)}</td>
+                                    <td className="border border-gray-400 p-2">{instructorName}</td>
+                                  </tr>
+                                );
+                              })}
+                              <tr className="bg-gray-50 font-bold">
+                                <td colSpan="2" className="border border-gray-400 p-2 text-right">Total</td>
+                                <td className="border border-gray-400 p-2 text-center">
+                                  {currentSubjects.reduce((sum, sub) => {
+                                    const val = parseFloat(sub.credits);
+                                    return isNaN(val) ? sum : sum + val;
+                                  }, 0)}
+                                </td>
+                                <td colSpan="2" className="border border-gray-400 p-2"></td>
+                              </tr>
+                            </tbody>
+                          </table>
+                        </div>
+                      </>
+                    );
+                  })()}
+                </div>
+              );
+            });
+          })()}
 
               {/* Faculty-wise Timetables */}
               {activeTab === 'faculty' && (

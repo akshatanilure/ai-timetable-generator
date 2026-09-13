@@ -83,7 +83,11 @@ class TimetableGenerator {
     const dailySlots = generateSlots();
 
     daysArr.forEach(day => {
-      this.timeSlots[day] = dailySlots;
+      if (day === 'Saturday') {
+        this.timeSlots[day] = dailySlots.filter(s => this.timeToMinutes(s) < this.timeToMinutes('14:30'));
+      } else {
+        this.timeSlots[day] = dailySlots;
+      }
     });
 
     // Helper to get ALL unique slots for matrix rendering

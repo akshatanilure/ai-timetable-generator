@@ -356,25 +356,27 @@ def pack_individual(individual, global_start_idx=0, semester=1):
             
         non_fixed_entries.sort(key=sort_key)
         
+        day_allowed_indices = [idx for idx in allowed_theory_indices if idx in saturday_valid_indices] if day == 'Saturday' else allowed_theory_indices
+        
         current_allowed_pos = 0
         for entry in non_fixed_entries:
             duration = entry['session'].get('duration', 1)
             while True:
-                if current_allowed_pos >= len(allowed_theory_indices):
+                if current_allowed_pos >= len(day_allowed_indices):
                     break
-                current_idx = allowed_theory_indices[current_allowed_pos]
+                current_idx = day_allowed_indices[current_allowed_pos]
                 fits = True
                 for offset in range(duration):
                     chk_idx = current_idx + offset
-                    if chk_idx not in allowed_theory_indices or chk_idx in reserved_slots:
+                    if chk_idx not in day_allowed_indices or chk_idx in reserved_slots:
                         fits = False
                         break
                 if fits:
                     break
                 current_allowed_pos += 1
             
-            if current_allowed_pos < len(allowed_theory_indices):
-                entry['slot_idx'] = allowed_theory_indices[current_allowed_pos]
+            if current_allowed_pos < len(day_allowed_indices):
+                entry['slot_idx'] = day_allowed_indices[current_allowed_pos]
                 current_allowed_pos += duration
             
     return individual
@@ -405,7 +407,7 @@ def calculate_fitness(individual, teachers, faculty_max_workloads, global_start_
             
         # Check Saturday limit
         if day == 'Saturday' and (slot_idx not in saturday_valid_indices or (slot_idx + duration - 1) not in saturday_valid_indices):
-            conflicts += 5000
+            conflicts += 100000
             
         # Check Lab start index limit strictly and limit to 1 lab per batch/division per day
         if entry['session']['type'] == 'lab_group':
