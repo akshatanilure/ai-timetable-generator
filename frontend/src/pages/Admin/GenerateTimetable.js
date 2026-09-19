@@ -387,13 +387,14 @@ const GenerateTimetable = () => {
                                 filteredFaculties = faculties.filter(f => {
                                   const nameLower = (f.name || '').toLowerCase();
                                   const deptLower = (f.department || '').toLowerCase();
-                                  return (deptLower === 'cse' || deptLower.includes('computer')) && (
+                                  return (deptLower === 'cse' || deptLower.includes('computer') || deptLower.includes('other')) && (
                                     nameLower.includes('umakant') ||
                                     nameLower.includes('shrihari') ||
                                     nameLower.includes('jayateerth') ||
                                     nameLower.includes('vadavi') ||
                                     nameLower.includes('raghavendra') ||
                                     nameLower.includes('shrinivas') ||
+                                    nameLower.includes('kulkarni') ||
                                     nameLower.includes('nita') ||
                                     nameLower.includes('vidyagouri') ||
                                     nameLower.includes('ranganath') ||
@@ -404,17 +405,22 @@ const GenerateTimetable = () => {
                                     nameLower.includes('shreedhar') ||
                                     nameLower.includes('sandhya') ||
                                     nameLower.includes('prathap') ||
-                                    nameLower.includes('basavaraj vad') ||
+                                    nameLower.includes('basavaraj') ||
                                     nameLower.includes('govind') ||
                                     nameLower.includes('smitesh') ||
-                                    nameLower.includes('smilesh') || // alias support
+                                    nameLower.includes('smilesh') ||
                                     nameLower.includes('sharada') ||
                                     nameLower.includes('indira') ||
                                     nameLower.includes('rani') ||
                                     nameLower.includes('rashmi') ||
                                     nameLower.includes('yashodha') ||
+                                    nameLower.includes('chaitali') ||
+                                    nameLower.includes('radhika') ||
                                     nameLower.includes('shashikant') ||
-                                    nameLower.includes('kurodi')
+                                    nameLower.includes('kurodi') ||
+                                    nameLower.includes('vastrad') ||
+                                    nameLower.includes('tanveer') ||
+                                    nameLower.includes('manjunath')
                                   );
                                 });
                               }

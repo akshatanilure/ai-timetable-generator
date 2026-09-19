@@ -60,6 +60,8 @@ const getFacultyWorkloadInfo = (teacher) => {
   };
 };
 
+const PREFERRED_DEPT_ORDER = ['CSE', 'Chemistry', 'Electrical / EEE', 'Mathematics', 'Physics', 'Others'];
+
 const Teachers = () => {
   const [teachers, setTeachers] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -176,20 +178,27 @@ const Teachers = () => {
     );
   });
 
-  // Unique departments for filter tabs
-  const allDepts = Array.from(new Set(teachers.map(t => t.department || 'CSE'))).sort();
+  // Unique departments for filter tabs ordered by PREFERRED_DEPT_ORDER
+  const allDepts = Array.from(new Set(teachers.map(t => t.department || 'Others'))).sort((a, b) => {
+    const idxA = PREFERRED_DEPT_ORDER.indexOf(a);
+    const idxB = PREFERRED_DEPT_ORDER.indexOf(b);
+    if (idxA !== -1 && idxB !== -1) return idxA - idxB;
+    if (idxA !== -1) return -1;
+    if (idxB !== -1) return 1;
+    return a.localeCompare(b);
+  });
 
   // Group teachers by department
   const groupedTeachers = filteredTeachers.reduce((acc, t) => {
-    const dept = t.department || 'Other';
+    const dept = t.department || 'Others';
     if (!acc[dept]) acc[dept] = [];
     acc[dept].push(t);
     return acc;
   }, {});
 
   const displayDepts = selectedDeptFilter === 'All' 
-    ? Object.keys(groupedTeachers).sort()
-    : Object.keys(groupedTeachers).filter(d => d === selectedDeptFilter);
+    ? allDepts.filter(d => groupedTeachers[d] && groupedTeachers[d].length > 0)
+    : [selectedDeptFilter].filter(d => groupedTeachers[d]);
 
   return (
     <div className="space-y-6">
@@ -378,11 +387,11 @@ const Teachers = () => {
                     onChange={e => setFormData({...formData, department: e.target.value})}
                   >
                     <option value="CSE">CSE</option>
-                    <option value="Maths">Maths</option>
-                    <option value="Physics">Physics</option>
                     <option value="Chemistry">Chemistry</option>
-                    <option value="Electrical">Electrical</option>
-                    <option value="Mechanical">Mechanical</option>
+                    <option value="Electrical / EEE">Electrical / EEE</option>
+                    <option value="Mathematics">Mathematics</option>
+                    <option value="Physics">Physics</option>
+                    <option value="Others">Others</option>
                   </select>
                 </div>
                 <div>

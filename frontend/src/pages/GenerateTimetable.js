@@ -715,7 +715,7 @@ const GenerateTimetable = () => {
        } else if (isElectrical) {
          filteredFaculties = faculties.filter(f => (f.department || '').toLowerCase().includes('elect') || (f.department || '').toLowerCase().includes('eee'));
        } else {
-         filteredFaculties = faculties.filter(f => (f.department || '').toLowerCase().includes('cse') || (f.department || '').toLowerCase().includes('computer'));
+         filteredFaculties = faculties.filter(f => (f.department || '').toLowerCase().includes('cse') || (f.department || '').toLowerCase().includes('computer') || (f.department || '').toLowerCase().includes('other'));
        }
      }
          
