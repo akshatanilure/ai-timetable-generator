@@ -1,6 +1,7 @@
 const ConstraintHandler = require('./constraintHandler');
 const LabAllocator = require('./labAllocator');
 const constraintService = require('./constraintService');
+const { getRulesForSemester } = require('../config/timetableRules');
 
 class TimetableGenerator {
   constructor(data) {
@@ -13,23 +14,22 @@ class TimetableGenerator {
     this.constraints = data.constraints;
     this.facultyMapping = data.facultyMapping || {};
 
+    const semNum = data.divisions[0]?.semester || data.semester || 1;
+    this.timetableRules = data.timetableRules || getRulesForSemester(semNum);
+
     // specialized engines
-    this.handler = new ConstraintHandler(data.divisions[0]?.semester, data.divisions[0]?.department);
+    this.handler = new ConstraintHandler(semNum, data.divisions[0]?.department);
     this.labEngine = new LabAllocator(this);
 
     // Configuration
-    const semNum = data.divisions[0]?.semester || 1;
-    const is8amStart = [1, 2, 5].includes(semNum);
-    const defaultStartTime = is8amStart ? "08:00" : "09:00";
-
     this.settings = data.settings || {
-      college_start_time: defaultStartTime,
-      college_end_time: "16:30",
-      period_duration: 60,
-      short_break_start: "10:00",
-      short_break_end: "10:30",
-      lunch_break_start: "12:30",
-      lunch_break_end: "14:30"
+      college_start_time: this.timetableRules.college_start_time,
+      college_end_time: this.timetableRules.college_end_time,
+      period_duration: this.timetableRules.period_duration,
+      short_break_start: this.timetableRules.short_break_start,
+      short_break_end: this.timetableRules.short_break_end,
+      lunch_break_start: this.timetableRules.lunch_break_start,
+      lunch_break_end: this.timetableRules.lunch_break_end
     };
 
     const hard = this.constraints?.hardConstraints;
@@ -202,22 +202,37 @@ class TimetableGenerator {
           vars.push({ division: div, subject: sub, type: 'theory', duration: 1 }); // treat tutorial as theory session
         }
 
-        // Labs
+        // Labs: strictly 2 continuous hours per lab session
         if (sub.practicalHours > 0) {
-          const sessionDuration = sub.practicalHours >= 2 ? 2 : sub.practicalHours;
-          const numSessions = Math.ceil(sub.practicalHours / sessionDuration);
+          const sessionDuration = 2; // Exactly 2 continuous hours
+          const numSessions = Math.max(1, Math.ceil(sub.practicalHours / sessionDuration));
+          const subName = (sub.subjectName || '').toLowerCase();
+          const subCode = (sub.subjectCode || '').toUpperCase();
+          const isMathLab = (div.semester === 1 || div.semester === 2) && (subName.includes('mathematic') || subName.includes('math'));
+          const isMajorProject = (div.semester === 7) && (subCode.includes('22UCSL702') || subName.includes('major project'));
+          const isFullClass = sub.isFullClassLab || isMathLab || isMajorProject;
 
           for (let i = 0; i < numSessions; i++) {
-            const divBatches = this.batches.filter(b => {
-              const bDivId = b.division._id ? b.division._id.toString() : b.division.toString();
-              return bDivId === div._id.toString();
-            });
-            if (divBatches.length > 0) {
-              divBatches.forEach(batch => {
-                vars.push({ division: div, subject: sub, type: 'lab', batch, duration: sessionDuration });
-              });
+            if (isFullClass) {
+              vars.push({ division: div, subject: sub, type: 'lab', duration: sessionDuration, isFullClassLab: true });
             } else {
-              vars.push({ division: div, subject: sub, type: 'lab', duration: sessionDuration });
+              let divBatches = this.batches.filter(b => {
+                const bDivId = b.division._id ? b.division._id.toString() : b.division.toString();
+                return bDivId === div._id.toString();
+              });
+
+              const allowedNames = this.timetableRules?.batchConfig?.batchNames;
+              if (allowedNames && allowedNames.length > 0 && divBatches.length > 0) {
+                divBatches = divBatches.filter(b => allowedNames.includes(b.batchName));
+              }
+
+              if (divBatches.length > 0) {
+                divBatches.forEach(batch => {
+                  vars.push({ division: div, subject: sub, type: 'lab', batch, duration: sessionDuration });
+                });
+              } else {
+                vars.push({ division: div, subject: sub, type: 'lab', duration: sessionDuration });
+              }
             }
           }
         }
@@ -391,8 +406,16 @@ class TimetableGenerator {
         // If current is 'theory', it cannot overlap with any existing lab.
         if (variable.type === 'theory') return false;
 
-        // If both are labs, they must be for DIFFERENT batches
+        // If either is a full-class lab, the whole division is locked.
+        if (variable.isFullClassLab || existing.isFullClassLab) return false;
+
+        // If both are labs, they must be for DIFFERENT batches and DIFFERENT lab subjects
         if (variable.type === 'lab' && existing.type === 'lab') {
+          // Never assign the same lab subject to multiple batches in the same slot
+          if (existing.subjects && existing.subjects.has(variable.subject._id.toString())) {
+            return false;
+          }
+
           if (existing.batches.has(variable.batch?._id.toString())) {
             return false; // This batch is already busy
           }
@@ -415,15 +438,28 @@ class TimetableGenerator {
     }
 
     if (!constraintService.validateLabContinuity(variable, slots)) {
-      // console.log("Lab continuity failed");
+      // console.log("Lab continuity check failed for:", variable.subject.subjectName);
       return false;
     }
 
-    // 3. Semester-specific validation
-    const handlerCheck = this.handler.validateSlot(variable, assignment);
-    if (!handlerCheck.valid) {
-      // console.log("Handler check failed:", handlerCheck.reason);
+    if (!constraintService.validateBreakOverlap(slots)) {
+      // console.log("Break overlap detected for slots:", slots);
       return false;
+    }
+
+    // Custom Dynamic Rules Evaluation
+    if (this.timetableRules) {
+      if (!constraintService.validateCustomRules(this.timetableRules, {
+        division: variable.division,
+        subject: variable.subject,
+        faculty: faculty,
+        room: room,
+        day: day,
+        slots: slots,
+        type: variable.type
+      })) {
+        return false;
+      }
     }
 
     return true;
@@ -443,20 +479,28 @@ class TimetableGenerator {
       }
 
       if (!divAssigns.has(key)) {
-        divAssigns.set(key, { type: variable.type, batches: new Set() });
+        divAssigns.set(key, { 
+          type: variable.type, 
+          batches: new Set(),
+          subjects: new Set(),
+          isFullClassLab: !!variable.isFullClassLab 
+        });
       }
 
       if (variable.type === 'lab' && variable.batch) {
         divAssigns.get(key).batches.add(variable.batch._id.toString());
+        divAssigns.get(key).subjects.add(variable.subject._id.toString());
+      } else if (variable.type === 'lab' && variable.isFullClassLab) {
+        divAssigns.get(key).isFullClassLab = true;
       } else if (variable.type === 'theory') {
-        divAssigns.set(key, { type: 'theory', batches: new Set() });
+        divAssigns.set(key, { type: 'theory', batches: new Set(), subjects: new Set(), isFullClassLab: false });
       }
     });
 
     this.timetable.push({
       day,
       startTime: slots[0],
-      endTime: this.calculateEndTime(slots[slots.length - 1]),
+      endTime: this.calculateEndTime(slots[0], variable.duration || 1),
       subject: variable.subject,
       faculty: faculty.length > 1 ? faculty : faculty[0],
       room,
@@ -476,11 +520,12 @@ class TimetableGenerator {
 
       const divAssigns = this.divisionAssignments.get(variable.division._id.toString());
       if (divAssigns && divAssigns.has(key)) {
-        if (variable.type === 'theory') {
+        if (variable.type === 'theory' || variable.isFullClassLab) {
           divAssigns.delete(key);
         } else if (variable.type === 'lab' && variable.batch) {
           const entry = divAssigns.get(key);
           entry.batches.delete(variable.batch._id.toString());
+          entry.subjects.delete(variable.subject._id.toString());
           if (entry.batches.size === 0) {
             divAssigns.delete(key);
           }
@@ -496,9 +541,10 @@ class TimetableGenerator {
     map.get(id).add(key);
   }
 
-  calculateEndTime(startTime) {
+  calculateEndTime(startTime, duration = 1) {
     const startMins = this.timeToMinutes(startTime);
-    return this.minutesToTime(startMins + this.periodDuration);
+    const totalMins = startMins + (duration * this.periodDuration);
+    return this.minutesToTime(totalMins);
   }
 }
 

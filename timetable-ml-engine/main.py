@@ -19,6 +19,7 @@ class GenerationRequest(BaseModel):
     semester: int = 1
     branch: str = "CSE"
     labsConfig: List[Dict[str, Any]] = [{"id": 1, "name": "Lab 1", "capacity": 30}, {"id": 2, "name": "Lab 2", "capacity": 30}]
+    timetableRules: Optional[Dict[str, Any]] = None
 
 DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
 SLOTS = ["08:00", "09:00", "10:30", "11:30", "12:30", "14:30", "15:30"]
@@ -54,7 +55,7 @@ def get_semester_timing_config(semester: int = 1):
     else:
         global_start_idx = 1
         allowed_theory_indices = [1, 2, 3, 4, 5, 6]
-        valid_lab_start_indices = [2, 3, 5]
+        valid_lab_start_indices = [2, 5]
         saturday_valid_indices = [1, 2, 3, 4]
     return global_start_idx, allowed_theory_indices, valid_lab_start_indices, saturday_valid_indices
 
@@ -361,10 +362,17 @@ def pack_individual(individual, global_start_idx=0, semester=1):
         current_allowed_pos = 0
         for entry in non_fixed_entries:
             duration = entry['session'].get('duration', 1)
+            is_lab = entry['session'].get('type') in ['lab_group', 'lab']
+            
             while True:
                 if current_allowed_pos >= len(day_allowed_indices):
                     break
                 current_idx = day_allowed_indices[current_allowed_pos]
+                
+                if is_lab and current_idx not in valid_lab_start_indices:
+                    current_allowed_pos += 1
+                    continue
+                    
                 fits = True
                 for offset in range(duration):
                     chk_idx = current_idx + offset
@@ -378,6 +386,8 @@ def pack_individual(individual, global_start_idx=0, semester=1):
             if current_allowed_pos < len(day_allowed_indices):
                 entry['slot_idx'] = day_allowed_indices[current_allowed_pos]
                 current_allowed_pos += duration
+                for offset in range(duration):
+                    reserved_slots.add(entry['slot_idx'] + offset)
             
     return individual
 
@@ -390,6 +400,8 @@ def calculate_fitness(individual, teachers, faculty_max_workloads, global_start_
     division_time = {}
     day_slots = {}
     labs_per_day_count = {}
+    batch_time = {}
+    batch_day_labs = {}
     
     for entry in individual:
         day, slot_idx = entry['day'], entry['slot_idx']
@@ -409,14 +421,30 @@ def calculate_fitness(individual, teachers, faculty_max_workloads, global_start_
         if day == 'Saturday' and (slot_idx not in saturday_valid_indices or (slot_idx + duration - 1) not in saturday_valid_indices):
             conflicts += 100000
             
-        # Check Lab start index limit strictly and limit to 1 lab per batch/division per day
+        # Check Lab start index limit strictly
         if entry['session']['type'] == 'lab_group':
             if slot_idx not in valid_lab_start_indices:
-                conflicts += 10000
+                conflicts += 100000
             if div not in labs_per_day_count: labs_per_day_count[div] = {}
             labs_per_day_count[div][day] = labs_per_day_count[div].get(day, 0) + 1
             if labs_per_day_count[div][day] > 1:
                 conflicts += 50000
+
+            # Batch double booking check & daily lab tracking per batch
+            if 'sessions' in entry['session']:
+                for sub_session in entry['session']['sessions']:
+                    b_name = sub_session.get('batch')
+                    if b_name and b_name != "Full Class":
+                        full_batch_key = f"{div}_{b_name}"
+                        if full_batch_key not in batch_day_labs: batch_day_labs[full_batch_key] = {}
+                        batch_day_labs[full_batch_key][day] = batch_day_labs[full_batch_key].get(day, 0) + 1
+                        
+                        for i in range(duration):
+                            slot_key = f"{day}_{slot_idx + i}"
+                            if full_batch_key not in batch_time: batch_time[full_batch_key] = set()
+                            if slot_key in batch_time[full_batch_key]:
+                                conflicts += 50000
+                            batch_time[full_batch_key].add(slot_key)
 
         # Faculty & Room double booking check
         if entry['session']['type'] == 'lab_group':
@@ -477,6 +505,12 @@ def calculate_fitness(individual, teachers, faculty_max_workloads, global_start_
                 conflicts += gaps * 50000
                 if len(set(slots)) > MAX_DAILY_WORKING_HOURS + 2:
                     conflicts += 10
+
+    # Penalize same batch having more than 1 lab session on the same day
+    for b_key, days in batch_day_labs.items():
+        for day, count in days.items():
+            if count > 1:
+                conflicts += (count - 1) * 10000
 
     # Faculty Workload Excess Penalty Check
     for t_id, slots in faculty_time.items():
@@ -552,15 +586,17 @@ def generate_timetable(request: GenerationRequest):
         for sub in div_lab_subs:
             sub_id = str(sub.get('_id'))
             sub_name = sub.get('subjectName', '').lower()
+            sub_code = str(sub.get('subjectCode', '')).upper()
             is_math_lab = (request.semester in [1, 2]) and ('mathematic' in sub_name or 'math' in sub_name)
-            is_full_class = sub.get('isFullClassLab', False) or is_math_lab
+            is_major_project = (request.semester == 7) and ('22UCSL702' in sub_code or 'major project' in sub_name)
+            is_full_class = sub.get('isFullClassLab', False) or is_math_lab or is_major_project
             
             if is_full_class:
                 full_class_labs.append(sub)
             else:
                 regular_labs.append(sub)
                 
-        # 1. Full-Class Labs (e.g. Maths Lab Sem 1 & 2)
+        # 1. Full-Class Labs (e.g. Maths Lab Sem 1 & 2, Sem 7 Major Project-I)
         for sub in full_class_labs:
             group_sessions = [{
                 "id": f"{div_name}_{sub.get('_id')}_full_lab",
@@ -582,37 +618,96 @@ def generate_timetable(request: GenerationRequest):
             
         # 2. Regular Rotational Parallel Labs
         if regular_labs:
-            if request.labsConfig and len(request.labsConfig) > 0:
-                num_batches = min(len(request.labsConfig), 3)
-                if num_batches < 2:
-                    num_batches = 2
-            else:
-                num_batches = 2
-            batches = [f"Batch A{i+1}" for i in range(num_batches)]
-            
-            num_blocks = max(len(regular_labs), num_batches)
-            for block_idx in range(num_blocks):
-                group_sessions = []
-                for b_idx in range(num_batches):
-                    lab_sub = regular_labs[(block_idx + b_idx) % len(regular_labs)]
-                    phys_lab = request.labsConfig[b_idx % len(request.labsConfig)] if request.labsConfig else {"id": b_idx+1, "name": f"Lab {b_idx+1}", "capacity": 30}
-                    group_sessions.append({
-                        "id": f"{div_name}_{lab_sub.get('_id')}_b{block_idx}_{b_idx}",
+            # When exactly 3 lab subjects exist in Sem 3, 4, 5, 6
+            if request.semester in [3, 4, 5, 6] and len(regular_labs) == 3:
+                # Sort labs deterministically
+                sorted_labs = sorted(regular_labs, key=lambda s: str(s.get('subjectCode') or s.get('subjectName') or s.get('_id')))
+                batches = ["A1", "A2", "A3"]
+                
+                # 3 parallel slots, each running all 3 labs with different batches:
+                # Slot 1 -> A1: Lab1, A2: Lab2, A3: Lab3
+                # Slot 2 -> A1: Lab2, A2: Lab3, A3: Lab1
+                # Slot 3 -> A1: Lab3, A2: Lab1, A3: Lab2
+                for slot_idx in range(3):
+                    group_sessions = []
+                    for b_idx in range(3):
+                        lab_idx = (slot_idx + b_idx) % 3
+                        lab_sub = sorted_labs[lab_idx]
+                        phys_lab = request.labsConfig[lab_idx % len(request.labsConfig)] if request.labsConfig else {"id": lab_idx+1, "name": f"Lab {lab_idx+1}", "capacity": 30}
+                        group_sessions.append({
+                            "id": f"{div_name}_{lab_sub.get('_id')}_slot{slot_idx}_b{batches[b_idx]}",
+                            "subject": lab_sub,
+                            "type": "lab",
+                            "duration": 2,
+                            "division": div_name,
+                            "batch": batches[b_idx],
+                            "num_batches": 3,
+                            "assigned_lab": phys_lab
+                        })
+                    sessions.append({
+                        "id": f"{div_name}_rotational_lab_slot_{slot_idx}",
+                        "type": "lab_group",
+                        "duration": 2,
+                        "division": div_name,
+                        "sessions": group_sessions
+                    })
+            elif len(regular_labs) == 1:
+                # When only 1 regular lab exists (e.g. Sem 7 22UCSL701):
+                # Assign each batch to a separate slot so the same lab is never assigned to multiple batches at once
+                lab_sub = regular_labs[0]
+                batches = ["A1", "A2", "A3"] if request.semester in [3, 4, 5, 6, 7] else [f"Batch A{i+1}" for i in range(2)]
+                for b_idx, b_name in enumerate(batches):
+                    phys_lab = request.labsConfig[0] if request.labsConfig else {"id": 1, "name": "Lab 1", "capacity": 30}
+                    group_sessions = [{
+                        "id": f"{div_name}_{lab_sub.get('_id')}_b{b_name}",
                         "subject": lab_sub,
                         "type": "lab",
                         "duration": 2,
                         "division": div_name,
-                        "batch": batches[b_idx],
-                        "num_batches": num_batches,
+                        "batch": b_name,
+                        "num_batches": len(batches),
                         "assigned_lab": phys_lab
+                    }]
+                    sessions.append({
+                        "id": f"{div_name}_lab_{lab_sub.get('_id')}_{b_name}",
+                        "type": "lab_group",
+                        "duration": 2,
+                        "division": div_name,
+                        "sessions": group_sessions
                     })
-                sessions.append({
-                    "id": f"{div_name}_parallel_group_{block_idx}",
-                    "type": "lab_group",
-                    "duration": 2,
-                    "division": div_name,
-                    "sessions": group_sessions
-                })
+            else:
+                # Sem 1 & Sem 2 existing logic, or semesters without exactly 3 labs
+                if request.labsConfig and len(request.labsConfig) > 0:
+                    num_batches = min(len(request.labsConfig), 3)
+                    if num_batches < 2:
+                        num_batches = 2
+                else:
+                    num_batches = 2
+                batches = [f"Batch A{i+1}" for i in range(num_batches)]
+                
+                num_blocks = max(len(regular_labs), num_batches)
+                for block_idx in range(num_blocks):
+                    group_sessions = []
+                    for b_idx in range(num_batches):
+                        lab_sub = regular_labs[(block_idx + b_idx) % len(regular_labs)]
+                        phys_lab = request.labsConfig[b_idx % len(request.labsConfig)] if request.labsConfig else {"id": b_idx+1, "name": f"Lab {b_idx+1}", "capacity": 30}
+                        group_sessions.append({
+                            "id": f"{div_name}_{lab_sub.get('_id')}_b{block_idx}_{b_idx}",
+                            "subject": lab_sub,
+                            "type": "lab",
+                            "duration": 2,
+                            "division": div_name,
+                            "batch": batches[b_idx],
+                            "num_batches": num_batches,
+                            "assigned_lab": phys_lab
+                        })
+                    sessions.append({
+                        "id": f"{div_name}_parallel_group_{block_idx}",
+                        "type": "lab_group",
+                        "duration": 2,
+                        "division": div_name,
+                        "sessions": group_sessions
+                    })
 
         for sub in request.subjects:
             is_minor = 'minor' in sub.get('subjectName', '').lower()
@@ -667,7 +762,7 @@ def generate_timetable(request: GenerationRequest):
                     lab_display_parts.append(s_code)
                 
                 batch_details.append({
-                    "batchName": b_name,
+                    "batchName": b_name if b_name != "Full Class" else None,
                     "subject": sub_session['subject'],
                     "faculty": fac_list,
                     "room": r
@@ -686,7 +781,7 @@ def generate_timetable(request: GenerationRequest):
                     },
                     "faculty": [{"_id": str(f.get('_id') or f.get('id')), "name": f.get('name') or f.get('inst') or 'Faculty'} for f in fac_list if f and (f.get('_id') or f.get('id'))],
                     "room": {"_id": str(r.get('_id') or r.get('id', '')), "roomNumber": r.get('roomNumber') or r.get('name') or 'Lab'} if r else None,
-                    "batch": {"batchName": b_name}
+                    "batch": {"batchName": b_name} if b_name and b_name != "Full Class" else None
                 })
                 
             end_slot_time = LAB_END_TIMES.get(entry['slot_idx'], "16:30")

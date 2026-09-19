@@ -38,7 +38,11 @@ const testGenerate = async () => {
         else facultyMapping[sub._id.toString()].theory = teachers[0]._id.toString();
       }
       if (sub.practicalHours > 0) {
-        facultyMapping[sub._id.toString()].lab = [teachers[0]._id.toString(), teachers[1]._id.toString()];
+        const subIndex = subjects.indexOf(sub);
+        const t1 = teachers[subIndex % teachers.length]._id.toString();
+        const t2 = teachers[(subIndex + 1) % teachers.length]._id.toString();
+        const t3 = teachers[(subIndex + 2) % teachers.length]._id.toString();
+        facultyMapping[sub._id.toString()].lab = [t1, t2, t3];
       }
     }
 

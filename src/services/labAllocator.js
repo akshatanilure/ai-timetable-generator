@@ -14,27 +14,49 @@ class LabAllocator {
    */
   allocate(session, day, slots) {
     const { subject, division, batch } = session;
-    let facRequired = 2;
+    const semNum = division?.semester || this.generator?.timetableRules?.semester || 1;
+    const isFullClass = subject?.isFullClassLab || session.isFullClassLab || (!batch && session.type === 'lab');
+    const batchConfig = this.generator?.timetableRules?.batchConfig || {};
+
+    let targetFacRequired = 2;
+    if (isFullClass) {
+      targetFacRequired = batchConfig.fullClassFaculty || 2;
+    } else if (batchConfig.facultyPerBatch) {
+      targetFacRequired = batchConfig.facultyPerBatch;
+    } else if ([1, 2].includes(semNum)) {
+      targetFacRequired = 3;
+    } else {
+      targetFacRequired = 2;
+    }
 
     // 1. Find suitable lab rooms
-    const suitableLabs = this.generator.labs.filter(l => 
-      l.supportedSubjects.some(s => s._id.toString() === subject._id.toString()) &&
-      l.capacity >= (batch ? batch.studentCount : division.strength)
+    let suitableLabs = this.generator.labs.filter(l => 
+      l.supportedSubjects && l.supportedSubjects.length > 0 &&
+      l.supportedSubjects.some(s => (s._id || s).toString() === subject._id.toString())
     );
 
-    // 2. Find suitable faculty (need 2)
+    if (suitableLabs.length === 0) {
+      // Fallback: any lab room with capacity
+      suitableLabs = this.generator.labs.filter(l => 
+        (l.roomType === 'lab' || l.capacity >= 20)
+      );
+    }
+
+    // 2. Find suitable faculty
     let suitableFaculty = [];
     const mappedFacs = this.generator.facultyMapping[subject._id.toString()];
     if (mappedFacs) {
       const ids = mappedFacs.lab || (Array.isArray(mappedFacs) ? mappedFacs : [mappedFacs]);
       suitableFaculty = this.generator.teachers.filter(t => ids.includes(t._id.toString()));
-    } else {
-      suitableFaculty = this.generator.teachers.filter(t => 
-        t.subjectsHandled.includes(subject.subjectName)
+    }
+    if (suitableFaculty.length < targetFacRequired) {
+      const fallbackFacs = this.generator.teachers.filter(t => 
+        t.subjectsHandled && t.subjectsHandled.includes(subject.subjectName)
       );
+      suitableFaculty = fallbackFacs.length >= targetFacRequired ? fallbackFacs : this.generator.teachers;
     }
 
-    facRequired = Math.min(2, suitableFaculty.length);
+    const facRequired = Math.min(targetFacRequired, suitableFaculty.length);
     if (facRequired === 0) return null;
 
     // 3. Try combinations
@@ -55,7 +77,6 @@ class LabAllocator {
       }
     }
 
-    console.log(`[LabAllocator] allocate failed for ${subject.subjectName} | labs: ${suitableLabs.length} | facs: ${suitableFaculty.length}`);
     return null;
   }
 
@@ -83,6 +104,14 @@ class LabAllocator {
       for (let i = 0; i < available.length; i++) {
         for (let j = i + 1; j < available.length; j++) {
           groups.push([available[i], available[j]]);
+        }
+      }
+    } else if (facRequired >= 3) {
+      for (let i = 0; i < available.length; i++) {
+        for (let j = i + 1; j < available.length; j++) {
+          for (let k = j + 1; k < available.length; k++) {
+            groups.push([available[i], available[j], available[k]]);
+          }
         }
       }
     }

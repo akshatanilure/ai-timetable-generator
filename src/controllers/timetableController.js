@@ -7,6 +7,7 @@ const Division = require('../models/Division');
 const Batch = require('../models/Batch');
 const Constraint = require('../models/Constraint');
 const TimetableSetting = require('../models/TimetableSetting');
+const { getRulesForSemester } = require('../config/timetableRules');
 const TimetableGenerator = require('../services/timetableGenerator');
 const ConflictChecker = require('../services/conflictChecker');
 const WorkloadService = require('../services/workloadService');
@@ -79,6 +80,8 @@ exports.generateTimetable = async (req, res) => {
       return res.status(400).json({ success: false, error: 'No divisions or subjects found for the given criteria' });
     }
 
+    const timetableRules = getRulesForSemester(parseInt(semester) || 1);
+
     // 7. Initialize Generator and Generate
     const generator = new TimetableGenerator({
       teachers,
@@ -90,6 +93,7 @@ exports.generateTimetable = async (req, res) => {
       batches,
       facultyMapping,
       settings,
+      timetableRules,
     });
 
     const result = generator.generate();
@@ -223,9 +227,21 @@ exports.generateTimetableML = async (req, res) => {
       adjustedMaxWorkloads[tId] = Math.max(0, currentLimit - teacher.currentWorkload);
     }
 
+    const timetableRules = getRulesForSemester(semesterVal);
+
+    // Format subjects to ensure isFullClassLab is set correctly
+    const formattedSubjects = subjects.map(s => {
+      const sObj = s.toJSON ? s.toJSON() : { ...s };
+      const subName = (sObj.subjectName || '').toLowerCase();
+      if ((semesterVal === 1 || semesterVal === 2) && (subName.includes('mathematic') || subName.includes('math'))) {
+        sObj.isFullClassLab = true;
+      }
+      return sObj;
+    });
+
     // 2. Format the payload to send to Python
     const payload = {
-      subjects,
+      subjects: formattedSubjects,
       teachers: teachersJSON.map(t => ({
         ...t,
         maxWorkloadPerWeek: adjustedMaxWorkloads[t._id.toString()]
@@ -237,8 +253,9 @@ exports.generateTimetableML = async (req, res) => {
       facultyMaxWorkloads: adjustedMaxWorkloads,
       fixedTimings: fixedTimings || {},
       labsConfig: labsConfig || [],
-      semester: parseInt(semester) || 1,
-      branch: branch || 'CSE'
+      semester: semesterVal,
+      branch: branch || 'CSE',
+      timetableRules
     };
 
     // 3. Make HTTP request to the Python FastAPI microservice with Auto-Repair loop
@@ -316,11 +333,12 @@ exports.saveTimetableML = async (req, res) => {
       for (const entry of schedule) {
         let batchId = undefined;
         if (entry.batch && entry.batch.batchName) {
-           let batch = await Batch.findOne({ batchName: entry.batch.batchName, division: div._id });
+           const normalizedBatch = entry.batch.batchName.toString().trim().replace(/^batch\s*/i, '').toUpperCase();
+           let batch = await Batch.findOne({ batchName: normalizedBatch, division: div._id });
            if (!batch) {
                // Calculate a fallback student count
                const fallbackCount = Math.max(1, Math.ceil((div.strength || 60) / 3));
-               batch = await Batch.create({ batchName: entry.batch.batchName, division: div._id, studentCount: fallbackCount });
+               batch = await Batch.create({ batchName: normalizedBatch, division: div._id, studentCount: fallbackCount });
            }
            batchId = batch._id;
         }
