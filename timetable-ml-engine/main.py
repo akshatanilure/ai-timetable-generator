@@ -16,6 +16,7 @@ class GenerationRequest(BaseModel):
     divisions: Optional[List[Dict[str, Any]]] = [{"name": "DIV-A", "strength": 72}]
     facultyMaxWorkloads: Dict[str, float] = {}
     fixedTimings: Dict[str, Dict[str, List[Dict[str, str]]]] = {}
+    entryMode: Optional[str] = "dynamic"
     semester: int = 1
     branch: str = "CSE"
     labsConfig: List[Dict[str, Any]] = [{"id": 1, "name": "Lab 1", "capacity": 30}, {"id": 2, "name": "Lab 2", "capacity": 30}]
@@ -59,7 +60,12 @@ def get_semester_timing_config(semester: int = 1):
         saturday_valid_indices = [1, 2, 3, 4]
     return global_start_idx, allowed_theory_indices, valid_lab_start_indices, saturday_valid_indices
 
-def create_individual(sessions, teachers, faculty_mapping, rooms, fixed_timings, global_start_idx=0, semester=1):
+def is_audit_extra_subject(sub):
+    name = (sub.get('subjectName') or '').lower()
+    code = str(sub.get('subjectCode') or '').upper()
+    return any(k in name for k in ['uhv', 'human', 'universal', 'environment', 'evs', 'constitution', 'audit', 'value', 'kannada', 'cip']) or any(k in code for k in ['UHV', 'AECC', 'HS', 'EVS', 'CIP', 'KAN'])
+
+def create_individual(sessions, teachers, faculty_mapping, rooms, fixed_timings, global_start_idx=0, semester=1, entry_mode="dynamic"):
     timetable = []
     
     div_names = list(set(s.get('division', 'DIV-A') for s in sessions))
@@ -300,9 +306,13 @@ def create_individual(sessions, teachers, faculty_mapping, rooms, fixed_timings,
         if not placed:
             non_fixed_theories.append(session)
 
+    # Audit/extra subjects have least priority (placed last)
+    non_fixed_theories.sort(key=lambda s: 1 if is_audit_extra_subject(s['subject']) else 0)
+
     for session in non_fixed_theories:
         div_name = session.get('division', 'DIV-A')
         sub_id = str(session['subject'].get('_id'))
+        is_audit = is_audit_extra_subject(session['subject'])
         
         available_slots = []
         for slot_idx in allowed_theory_indices:
@@ -314,7 +324,16 @@ def create_individual(sessions, teachers, faculty_mapping, rooms, fixed_timings,
                     continue
                 available_slots.append((day, slot_idx))
                 
-        shuffled_slots = sorted(available_slots, key=lambda x: random.random())
+        if is_audit:
+            # Prefer last available slots after lunch: slot 6 (15:30) first, then slot 5 (14:30)
+            after_lunch = [(d, s) for (d, s) in available_slots if s in [6, 5]]
+            after_lunch.sort(key=lambda x: (0 if x[1] == 6 else 1, random.random()))
+            before_lunch = [sl for sl in available_slots if sl[1] not in [6, 5]]
+            random.shuffle(before_lunch)
+            shuffled_slots = after_lunch + before_lunch
+        else:
+            shuffled_slots = sorted(available_slots, key=lambda x: random.random())
+
         for (day, slot_idx) in shuffled_slots:
             if (day, slot_idx) not in occupied[div_name] and (day, slot_idx) not in reserved_fixed[div_name]:
                 occupied[div_name].add((day, slot_idx))
@@ -545,10 +564,10 @@ def mutate(individual, teachers, rooms, global_start_idx=0, mutation_rate=0.1, s
             
     return individual
 
-def run_genetic_algorithm(sessions, teachers, faculty_mapping, rooms, fixed_timings, faculty_max_workloads, global_start_idx=0, semester=1):
+def run_genetic_algorithm(sessions, teachers, faculty_mapping, rooms, fixed_timings, faculty_max_workloads, global_start_idx=0, semester=1, entry_mode="dynamic"):
     POPULATION_SIZE = 100 
     GENERATIONS = 300
-    population = [create_individual(sessions, teachers, faculty_mapping, rooms, fixed_timings, global_start_idx, semester) for _ in range(POPULATION_SIZE)]
+    population = [create_individual(sessions, teachers, faculty_mapping, rooms, fixed_timings, global_start_idx, semester, entry_mode) for _ in range(POPULATION_SIZE)]
     best_individual = None
     best_fitness = float('inf')
     for generation in range(GENERATIONS):
@@ -719,7 +738,7 @@ def generate_timetable(request: GenerationRequest):
                     
     global_start_idx, allowed_theory_indices, valid_lab_start_indices, saturday_valid_indices = get_semester_timing_config(request.semester)
                     
-    best_individual = run_genetic_algorithm(sessions, request.teachers, request.facultyMapping, request.rooms, request.fixedTimings, request.facultyMaxWorkloads, global_start_idx, request.semester)
+    best_individual = run_genetic_algorithm(sessions, request.teachers, request.facultyMapping, request.rooms, request.fixedTimings, request.facultyMaxWorkloads, global_start_idx, request.semester, request.entryMode)
     pack_individual(best_individual, global_start_idx, request.semester)
     best_fitness = calculate_fitness(best_individual, request.teachers, request.facultyMaxWorkloads, global_start_idx, request.semester)
     

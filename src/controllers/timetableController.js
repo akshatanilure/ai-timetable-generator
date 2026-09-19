@@ -166,7 +166,7 @@ exports.generateTimetable = async (req, res) => {
 // @access  Private (Admin)
 exports.generateTimetableML = async (req, res) => {
   try {
-    const { semester, branch, facultyMapping, divisions, facultyMaxWorkloads, fixedTimings, labsConfig } = req.body;
+    const { semester, branch, facultyMapping, divisions, facultyMaxWorkloads, fixedTimings, labsConfig, entryMode } = req.body;
 
     // 1. Gather all data from MongoDB exactly like the normal generator
     const teachers = await Teacher.find();
@@ -252,6 +252,7 @@ exports.generateTimetableML = async (req, res) => {
       divisions: divisions || [{ name: 'DIV-A', strength: 60 }],
       facultyMaxWorkloads: adjustedMaxWorkloads,
       fixedTimings: fixedTimings || {},
+      entryMode: entryMode || 'dynamic',
       labsConfig: labsConfig || [],
       semester: semesterVal,
       branch: branch || 'CSE',
