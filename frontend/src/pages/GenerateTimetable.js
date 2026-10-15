@@ -48,6 +48,7 @@ const GenerateTimetable = () => {
   const [savedSemesters, setSavedSemesters] = useState({});
   const [bySemesterResults, setBySemesterResults] = useState({});
   const [previewSemester, setPreviewSemester] = useState(1);
+  const [savingToDb, setSavingToDb] = useState(false);
 
   const handleCycleChange = (newCycle) => {
     setCycle(newCycle);
@@ -664,6 +665,21 @@ const GenerateTimetable = () => {
     return 16; // Assistant Professor default
   };
 
+  const isMathematicsOrChemistryForCSE = (sub) => {
+    if (!sub) return false;
+    const currentBranch = (config.branch || 'CSE').toUpperCase();
+    if (currentBranch !== 'CSE') return false;
+
+    const subNameLower = (sub.subjectName || '').toLowerCase();
+    const subCodeLower = (sub.subjectCode || '').toLowerCase();
+    const subDeptLower = (sub.department || '').toLowerCase();
+
+    const isMath = subNameLower.includes('math') || subNameLower.includes('mats') || subCodeLower.includes('mat') || subCodeLower.includes('mac') || subDeptLower.includes('math') || subCodeLower.includes('ma1') || subCodeLower.includes('ma2');
+    const isChemistry = subNameLower.includes('chemistry') || subNameLower.includes('chem') || subCodeLower.includes('che') || subDeptLower.includes('chemistry') || subDeptLower.includes('chem') || subCodeLower.includes('ch1');
+
+    return isMath || isChemistry;
+  };
+
   const getFacultyOptionsForSubject = (divName, subjectId, type, labIndex) => {
      const sub = subjects.find(s => s._id === subjectId);
      const requiredHours = type === 'theory' 
@@ -722,16 +738,38 @@ const GenerateTimetable = () => {
   // Removed duplicate functions handleFixedTimingChange and addFixedTiming
 
   const handleSaveTimetables = async () => {
+    if (!result?.data) {
+      alert('No generated timetable data available to save. Please generate a timetable first.');
+      return;
+    }
     try {
-      await api.post('/timetables/save-ml', {
-        semester: config.semester,
-        branch: config.branch,
-        rawSchedules: result.data.rawSchedules
-      });
-      alert('Timetables saved successfully to database!');
+      setSavingToDb(true);
+      const semKeys = bySemesterResults ? Object.keys(bySemesterResults) : [];
+      if (semKeys.length > 0) {
+        for (const semStr of semKeys) {
+          const semData = bySemesterResults[semStr];
+          if (semData && semData.rawSchedules && Object.keys(semData.rawSchedules).length > 0) {
+            await api.post('/timetables/save-ml', {
+              semester: parseInt(semStr, 10),
+              branch: config.branch || 'CSE',
+              rawSchedules: semData.rawSchedules
+            });
+          }
+        }
+      } else if (result.data.rawSchedules) {
+        const targetSem = previewSemester || (cycle === 'odd' ? 1 : 2) || config.semester;
+        await api.post('/timetables/save-ml', {
+          semester: targetSem,
+          branch: config.branch || 'CSE',
+          rawSchedules: result.data.rawSchedules
+        });
+      }
+      alert('Timetable(s) successfully saved to MongoDB database! You can now view and manage them in the Timetables section.');
     } catch (error) {
-      console.error(error);
-      alert('Failed to save timetables');
+      console.error('Failed to save timetables:', error);
+      alert('Failed to save timetables: ' + (error.response?.data?.error || error.message));
+    } finally {
+      setSavingToDb(false);
     }
   };
 
@@ -934,42 +972,6 @@ const GenerateTimetable = () => {
                 </select>
               </div>
 
-              {/* Dynamic / Static Entry Toggle for Sem 1 & Sem 2 */}
-              {(parseInt(config.semester) === 1 || parseInt(config.semester) === 2) && (
-                <div className="pt-2 border-t border-gray-100">
-                  <label className="block text-xs font-bold text-gray-700 mb-2">Timetable Entry Mode</label>
-                  <div className="grid grid-cols-2 gap-2 bg-gray-100 p-1 rounded-xl border border-gray-200">
-                    <button
-                      type="button"
-                      onClick={() => setEntryMode('dynamic')}
-                      className={`py-2 px-3 rounded-lg text-xs font-extrabold transition-all flex items-center justify-center gap-1.5 ${
-                        entryMode === 'dynamic'
-                          ? 'bg-white text-indigo-700 shadow-sm border border-indigo-100'
-                          : 'text-gray-500 hover:text-gray-700'
-                      }`}
-                    >
-                      <FiCpu className="text-indigo-500" /> Dynamic Entry
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setEntryMode('static')}
-                      className={`py-2 px-3 rounded-lg text-xs font-extrabold transition-all flex items-center justify-center gap-1.5 ${
-                        entryMode === 'static'
-                          ? 'bg-white text-indigo-700 shadow-sm border border-indigo-100'
-                          : 'text-gray-500 hover:text-gray-700'
-                      }`}
-                    >
-                      <FiCheckCircle className="text-indigo-500" /> Static Entry
-                    </button>
-                  </div>
-                  <p className="text-[10px] text-gray-500 mt-1.5 font-medium">
-                    {entryMode === 'dynamic' 
-                      ? 'Dynamic Entry: Automatic timetable generation respecting entered constraints.' 
-                      : 'Static Entry: Strict timetable generation adhering to your designated faculty & fixed timings.'}
-                  </p>
-                </div>
-              )}
-              
               <div className="pt-2 border-t border-gray-100">
                 <label className="block text-xs font-bold text-gray-600 mb-2">Number of Classes (Divisions)</label>
                 <input 
@@ -1002,268 +1004,317 @@ const GenerateTimetable = () => {
           </div>
 
           {/* Subjects Summary */}
-          <div className="bg-gradient-to-br from-indigo-50 to-purple-50 p-6 rounded-2xl shadow-sm border border-indigo-100">
-            <h3 className="text-sm font-bold text-indigo-800 uppercase mb-4 flex items-center">
+          <div className="bg-gradient-to-br from-indigo-50 to-purple-50 p-5 rounded-2xl shadow-sm border border-indigo-100">
+            <h3 className="text-sm font-bold text-indigo-800 uppercase mb-3 flex items-center">
               <FiBookOpen className="mr-2" /> Semester Overview
             </h3>
-            <div className="space-y-3">
-              <div className="flex justify-between items-center bg-white p-3 rounded-lg shadow-sm">
-                <span className="text-xs font-bold text-gray-500">Total Subjects</span>
-                <div className="text-xl font-bold text-gray-800">{subjects.length}</div>
-              </div>
+            <div className="flex justify-between items-center bg-white p-3 rounded-xl shadow-xs border border-indigo-100/60">
+              <span className="text-xs font-bold text-gray-500">Total Subjects</span>
+              <div className="text-xl font-bold text-indigo-900">{subjects.length}</div>
             </div>
+          </div>
 
-            <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
-              <h3 className="text-sm font-bold text-gray-700 mb-3 uppercase tracking-wider flex items-center gap-2">
+          {/* Subject Timings & Constraints */}
+          <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100 space-y-4">
+            <div>
+              <h3 className="text-sm font-bold text-gray-800 uppercase tracking-wider flex items-center gap-2">
                 <FiClock className="text-indigo-600" />
                 Subject Timings & Constraints
               </h3>
-              <p className="text-xs text-gray-500 mb-4">
-                {(config.semester == 1 || config.semester == 2) && "Set day & time slots beside each subject in the Map Faculty section, or configure custom slot timings below."}
+              <p className="text-xs text-gray-500 mt-1 leading-relaxed">
+                {(config.semester == 1 || config.semester == 2) && (
+                  entryMode === 'dynamic'
+                    ? "Dynamic Entry: Day & Time slots are active for Mathematics & Chemistry only (CSE). Configure other custom slots below if needed."
+                    : "Static Entry: Set day & time slots beside each subject in the Map Faculty section, or configure custom slot timings below."
+                )}
                 {(config.semester == 5) && "Set timing for Program Elective (applied across all divisions)."}
                 {(config.semester == 6 || config.semester == 7) && "Set timings for Program Elective & Open Elective (applied across all divisions)."}
                 {!([1, 2, 5, 6, 7].includes(parseInt(config.semester))) && "Force specific subjects to be scheduled at an exact day and time."}
               </p>
+            </div>
 
-              {/* Sem 5 Elective Timing (Dynamic Inputs based on Credits) */}
-              {(parseInt(config.semester) === 5) && (
-                <div className="mb-6 bg-indigo-50 p-4 rounded-xl border border-indigo-100">
-                  <div className="flex justify-between items-center mb-3 border-b border-indigo-100 pb-2">
-                    <div>
-                      <h4 className="text-xs font-bold text-indigo-900">Program Elective Timing</h4>
-                      <p className="text-[11px] text-indigo-600">Applied to all divisions</p>
+            {/* Sem 5 Elective Timing (Dynamic Inputs based on Credits) */}
+            {(parseInt(config.semester) === 5) && (
+              <div className="bg-indigo-50/70 p-3.5 rounded-xl border border-indigo-100">
+                <div className="flex justify-between items-center mb-2.5 border-b border-indigo-100 pb-2">
+                  <div>
+                    <h4 className="text-xs font-bold text-indigo-900">Program Elective Timing</h4>
+                    <p className="text-[10px] text-indigo-600">Applied to all divisions</p>
+                  </div>
+                  <div className="flex items-center gap-1.5 bg-white px-2 py-0.5 rounded-lg border border-indigo-200 shadow-xs">
+                    <label className="text-[10px] font-bold text-indigo-900">Credits:</label>
+                    <input 
+                      type="number" 
+                      min="1" 
+                      max="6" 
+                      value={peCredits}
+                      onChange={e => handleElectiveCreditsChange('pe', parseInt(e.target.value) || 1)}
+                      className="w-8 p-0.5 bg-indigo-50 border border-indigo-300 rounded text-xs text-center font-bold text-indigo-900 outline-none"
+                    />
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  {Array.from({ length: peCredits }).map((_, idx) => (
+                    <div key={idx} className="flex gap-2 items-center">
+                      <span className="text-[10px] text-indigo-600 font-bold w-12 shrink-0">Slot {idx + 1}</span>
+                      <select 
+                        className="w-1/2 min-w-0 p-1.5 bg-white border border-gray-200 rounded-lg text-xs outline-none font-medium text-gray-700 focus:border-indigo-500"
+                        value={(() => {
+                          const peSub = subjects.find(s => (s.subjectCode || '').includes('UCSE') || (s.subjectName || '').toLowerCase().includes('elective') || s.subjectType === 'elective');
+                          return peSub ? fixedTimings[divisions[0]?.name]?.[peSub._id]?.[idx]?.day || '' : '';
+                        })()}
+                        onChange={e => handleGlobalElectiveTimingChange('pe', idx, 'day', e.target.value)}
+                      >
+                        <option value="">Day</option>
+                        <option value="N/A">N/A</option>
+                        <option value="Monday">Mon</option>
+                        <option value="Tuesday">Tue</option>
+                        <option value="Wednesday">Wed</option>
+                        <option value="Thursday">Thu</option>
+                        <option value="Friday">Fri</option>
+                        <option value="Saturday">Sat</option>
+                      </select>
+                      <select 
+                        className="w-1/2 min-w-0 p-1.5 bg-white border border-gray-200 rounded-lg text-xs outline-none font-medium text-gray-700 focus:border-indigo-500"
+                        value={(() => {
+                          const peSub = subjects.find(s => (s.subjectCode || '').includes('UCSE') || (s.subjectName || '').toLowerCase().includes('elective') || s.subjectType === 'elective');
+                          return peSub ? fixedTimings[divisions[0]?.name]?.[peSub._id]?.[idx]?.time || '' : '';
+                        })()}
+                        onChange={e => handleGlobalElectiveTimingChange('pe', idx, 'time', e.target.value)}
+                      >
+                        <option value="">Time</option>
+                        <option value="N/A">N/A</option>
+                        {["08:00", "09:00", "10:30", "11:30", "12:30", "14:30", "15:30"].map(t => <option key={t} value={t}>{t}</option>)}
+                      </select>
                     </div>
-                    <div className="flex items-center gap-1.5 bg-white px-2.5 py-1 rounded-lg border border-indigo-200 shadow-sm">
-                      <label className="text-[11px] font-bold text-indigo-900">Credits:</label>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Sem 6 & Sem 7 Elective Timings (Dynamic Inputs based on Credits) */}
+            {(parseInt(config.semester) === 6 || parseInt(config.semester) === 7) && (
+              <div className="bg-indigo-50/70 p-3.5 rounded-xl border border-indigo-100 space-y-3">
+                <h4 className="text-xs font-bold text-indigo-900 border-b border-indigo-100 pb-2">Elective Timings (All Divisions)</h4>
+                
+                {/* Open Elective */}
+                <div className="bg-white p-3 rounded-lg border border-indigo-100 shadow-xs space-y-2">
+                  <div className="flex justify-between items-center mb-1 border-b border-indigo-50 pb-1.5">
+                    <h5 className="text-[11px] font-bold text-indigo-800">Open Elective</h5>
+                    <div className="flex items-center gap-1.5 bg-indigo-50 px-2 py-0.5 rounded border border-indigo-200">
+                      <label className="text-[10px] font-bold text-indigo-900">Credits:</label>
+                      <input 
+                        type="number" 
+                        min="1" 
+                        max="6" 
+                        value={oeCredits}
+                        onChange={e => handleElectiveCreditsChange('oe', parseInt(e.target.value) || 1)}
+                        className="w-8 p-0.5 bg-white border border-indigo-300 rounded text-xs text-center font-bold text-indigo-900 outline-none"
+                      />
+                    </div>
+                  </div>
+                  {Array.from({ length: oeCredits }).map((_, idx) => (
+                    <div key={idx} className="flex gap-2 items-center">
+                      <span className="text-[10px] text-gray-500 font-bold w-12 shrink-0">Slot {idx + 1}</span>
+                      <select 
+                        className="w-1/2 min-w-0 p-1.5 bg-white border border-gray-200 rounded text-xs outline-none font-medium text-gray-700 focus:border-indigo-500"
+                        value={(() => {
+                          const oeSub = subjects.find(s => (s.subjectCode || '').includes('UCSO') || (s.subjectName || '').toLowerCase().includes('open'));
+                          return oeSub ? fixedTimings[divisions[0]?.name]?.[oeSub._id]?.[idx]?.day || '' : '';
+                        })()}
+                        onChange={e => handleGlobalElectiveTimingChange('oe', idx, 'day', e.target.value)}
+                      >
+                        <option value="">Day</option>
+                        <option value="N/A">N/A</option>
+                        <option value="Monday">Mon</option>
+                        <option value="Tuesday">Tue</option>
+                        <option value="Wednesday">Wed</option>
+                        <option value="Thursday">Thu</option>
+                        <option value="Friday">Fri</option>
+                        <option value="Saturday">Sat</option>
+                      </select>
+                      <select 
+                        className="w-1/2 min-w-0 p-1.5 bg-white border border-gray-200 rounded text-xs outline-none font-medium text-gray-700 focus:border-indigo-500"
+                        value={(() => {
+                          const oeSub = subjects.find(s => (s.subjectCode || '').includes('UCSO') || (s.subjectName || '').toLowerCase().includes('open'));
+                          return oeSub ? fixedTimings[divisions[0]?.name]?.[oeSub._id]?.[idx]?.time || '' : '';
+                        })()}
+                        onChange={e => handleGlobalElectiveTimingChange('oe', idx, 'time', e.target.value)}
+                      >
+                        <option value="">Time</option>
+                        <option value="N/A">N/A</option>
+                        {["08:00", "09:00", "10:30", "11:30", "12:30", "14:30", "15:30"].map(t => <option key={t} value={t}>{t}</option>)}
+                      </select>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Program Elective */}
+                <div className="bg-white p-3 rounded-lg border border-indigo-100 shadow-xs space-y-2">
+                  <div className="flex justify-between items-center mb-1 border-b border-indigo-50 pb-1.5">
+                    <h5 className="text-[11px] font-bold text-indigo-800">Program Elective</h5>
+                    <div className="flex items-center gap-1.5 bg-indigo-50 px-2 py-0.5 rounded border border-indigo-200">
+                      <label className="text-[10px] font-bold text-indigo-900">Credits:</label>
                       <input 
                         type="number" 
                         min="1" 
                         max="6" 
                         value={peCredits}
                         onChange={e => handleElectiveCreditsChange('pe', parseInt(e.target.value) || 1)}
-                        className="w-12 p-0.5 bg-indigo-50 border border-indigo-300 rounded text-xs text-center font-bold text-indigo-900 outline-none"
+                        className="w-8 p-0.5 bg-white border border-indigo-300 rounded text-xs text-center font-bold text-indigo-900 outline-none"
                       />
                     </div>
                   </div>
-                  <div className="space-y-2">
-                    {Array.from({ length: peCredits }).map((_, idx) => (
-                      <div key={idx} className="flex gap-2 items-center">
-                        <span className="text-[10px] text-indigo-600 font-bold w-12">Slot {idx + 1}</span>
-                        <select 
-                          className="min-w-0 p-2 bg-white border border-gray-200 rounded text-xs flex-1 outline-none font-medium"
-                          value={(() => {
-                            const peSub = subjects.find(s => (s.subjectCode || '').includes('UCSE') || (s.subjectName || '').toLowerCase().includes('elective') || s.subjectType === 'elective');
-                            return peSub ? fixedTimings[divisions[0]?.name]?.[peSub._id]?.[idx]?.day || '' : '';
-                          })()}
-                          onChange={e => handleGlobalElectiveTimingChange('pe', idx, 'day', e.target.value)}
-                        >
-                          <option value="">Day</option>
-                          <option value="N/A">N/A</option>
-                          <option value="Monday">Mon</option>
-                          <option value="Tuesday">Tue</option>
-                          <option value="Wednesday">Wed</option>
-                          <option value="Thursday">Thu</option>
-                          <option value="Friday">Fri</option>
-                          <option value="Saturday">Sat</option>
-                        </select>
-                        <select 
-                          className="min-w-0 p-2 bg-white border border-gray-200 rounded text-xs flex-1 outline-none font-medium"
-                          value={(() => {
-                            const peSub = subjects.find(s => (s.subjectCode || '').includes('UCSE') || (s.subjectName || '').toLowerCase().includes('elective') || s.subjectType === 'elective');
-                            return peSub ? fixedTimings[divisions[0]?.name]?.[peSub._id]?.[idx]?.time || '' : '';
-                          })()}
-                          onChange={e => handleGlobalElectiveTimingChange('pe', idx, 'time', e.target.value)}
-                        >
-                          <option value="">Time</option>
-                          <option value="N/A">N/A</option>
-                          {["08:00", "09:00", "10:30", "11:30", "12:30", "14:30", "15:30"].map(t => <option key={t} value={t}>{t}</option>)}
-                        </select>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Sem 6 & Sem 7 Elective Timings (Dynamic Inputs based on Credits) */}
-              {(parseInt(config.semester) === 6 || parseInt(config.semester) === 7) && (
-                <div className="mb-6 bg-indigo-50 p-4 rounded-xl border border-indigo-100 space-y-4">
-                  <h4 className="text-xs font-bold text-indigo-900 border-b border-indigo-100 pb-2">Elective Timings (Applied to all divisions)</h4>
-                  
-                  {/* Open Elective */}
-                  <div className="bg-white p-3 rounded-lg border border-indigo-100 shadow-sm space-y-2">
-                    <div className="flex justify-between items-center mb-1 border-b border-indigo-50 pb-2">
-                      <h5 className="text-[11px] font-bold text-indigo-800">Open Elective</h5>
-                      <div className="flex items-center gap-1.5 bg-indigo-50 px-2 py-0.5 rounded border border-indigo-200">
-                        <label className="text-[10px] font-bold text-indigo-900">Credits:</label>
-                        <input 
-                          type="number" 
-                          min="1" 
-                          max="6" 
-                          value={oeCredits}
-                          onChange={e => handleElectiveCreditsChange('oe', parseInt(e.target.value) || 1)}
-                          className="w-10 p-0.5 bg-white border border-indigo-300 rounded text-xs text-center font-bold text-indigo-900 outline-none"
-                        />
-                      </div>
+                  {Array.from({ length: peCredits }).map((_, idx) => (
+                    <div key={idx} className="flex gap-2 items-center">
+                      <span className="text-[10px] text-gray-500 font-bold w-12 shrink-0">Slot {idx + 1}</span>
+                      <select 
+                        className="w-1/2 min-w-0 p-1.5 bg-white border border-gray-200 rounded text-xs outline-none font-medium text-gray-700 focus:border-indigo-500"
+                        value={(() => {
+                          const peSub = subjects.find(s => (s.subjectCode || '').includes('UCSE') || (s.subjectName || '').toLowerCase().includes('program') || (s.subjectName || '').toLowerCase().includes('elective') || s.subjectType === 'elective');
+                          return peSub ? fixedTimings[divisions[0]?.name]?.[peSub._id]?.[idx]?.day || '' : '';
+                        })()}
+                        onChange={e => handleGlobalElectiveTimingChange('pe', idx, 'day', e.target.value)}
+                      >
+                        <option value="">Day</option>
+                        <option value="N/A">N/A</option>
+                        <option value="Monday">Mon</option>
+                        <option value="Tuesday">Tue</option>
+                        <option value="Wednesday">Wed</option>
+                        <option value="Thursday">Thu</option>
+                        <option value="Friday">Fri</option>
+                        <option value="Saturday">Sat</option>
+                      </select>
+                      <select 
+                        className="w-1/2 min-w-0 p-1.5 bg-white border border-gray-200 rounded text-xs outline-none font-medium text-gray-700 focus:border-indigo-500"
+                        value={(() => {
+                          const peSub = subjects.find(s => (s.subjectCode || '').includes('UCSE') || (s.subjectName || '').toLowerCase().includes('program') || (s.subjectName || '').toLowerCase().includes('elective') || s.subjectType === 'elective');
+                          return peSub ? fixedTimings[divisions[0]?.name]?.[peSub._id]?.[idx]?.time || '' : '';
+                        })()}
+                        onChange={e => handleGlobalElectiveTimingChange('pe', idx, 'time', e.target.value)}
+                      >
+                        <option value="">Time</option>
+                        <option value="N/A">N/A</option>
+                        {["08:00", "09:00", "10:30", "11:30", "12:30", "14:30", "15:30"].map(t => <option key={t} value={t}>{t}</option>)}
+                      </select>
                     </div>
-                    {Array.from({ length: oeCredits }).map((_, idx) => (
-                      <div key={idx} className="flex gap-2 items-center">
-                        <span className="text-[10px] text-gray-500 font-bold w-12">Slot {idx + 1}</span>
-                        <select 
-                          className="min-w-0 p-1.5 bg-white border border-gray-200 rounded text-xs flex-1 outline-none font-medium"
-                          value={(() => {
-                            const oeSub = subjects.find(s => (s.subjectCode || '').includes('UCSO') || (s.subjectName || '').toLowerCase().includes('open'));
-                            return oeSub ? fixedTimings[divisions[0]?.name]?.[oeSub._id]?.[idx]?.day || '' : '';
-                          })()}
-                          onChange={e => handleGlobalElectiveTimingChange('oe', idx, 'day', e.target.value)}
-                        >
-                          <option value="">Day</option>
-                          <option value="N/A">N/A</option>
-                          <option value="Monday">Mon</option>
-                          <option value="Tuesday">Tue</option>
-                          <option value="Wednesday">Wed</option>
-                          <option value="Thursday">Thu</option>
-                          <option value="Friday">Fri</option>
-                          <option value="Saturday">Sat</option>
-                        </select>
-                        <select 
-                          className="min-w-0 p-1.5 bg-white border border-gray-200 rounded text-xs flex-1 outline-none font-medium"
-                          value={(() => {
-                            const oeSub = subjects.find(s => (s.subjectCode || '').includes('UCSO') || (s.subjectName || '').toLowerCase().includes('open'));
-                            return oeSub ? fixedTimings[divisions[0]?.name]?.[oeSub._id]?.[idx]?.time || '' : '';
-                          })()}
-                          onChange={e => handleGlobalElectiveTimingChange('oe', idx, 'time', e.target.value)}
-                        >
-                          <option value="">Time</option>
-                          <option value="N/A">N/A</option>
-                          {["08:00", "09:00", "10:30", "11:30", "12:30", "14:30", "15:30"].map(t => <option key={t} value={t}>{t}</option>)}
-                        </select>
-                      </div>
-                    ))}
-                  </div>
-
-                  {/* Program Elective */}
-                  <div className="bg-white p-3 rounded-lg border border-indigo-100 shadow-sm space-y-2">
-                    <div className="flex justify-between items-center mb-1 border-b border-indigo-50 pb-2">
-                      <h5 className="text-[11px] font-bold text-indigo-800">Program Elective</h5>
-                      <div className="flex items-center gap-1.5 bg-indigo-50 px-2 py-0.5 rounded border border-indigo-200">
-                        <label className="text-[10px] font-bold text-indigo-900">Credits:</label>
-                        <input 
-                          type="number" 
-                          min="1" 
-                          max="6" 
-                          value={peCredits}
-                          onChange={e => handleElectiveCreditsChange('pe', parseInt(e.target.value) || 1)}
-                          className="w-10 p-0.5 bg-white border border-indigo-300 rounded text-xs text-center font-bold text-indigo-900 outline-none"
-                        />
-                      </div>
-                    </div>
-                    {Array.from({ length: peCredits }).map((_, idx) => (
-                      <div key={idx} className="flex gap-2 items-center">
-                        <span className="text-[10px] text-gray-500 font-bold w-12">Slot {idx + 1}</span>
-                        <select 
-                          className="min-w-0 p-1.5 bg-white border border-gray-200 rounded text-xs flex-1 outline-none font-medium"
-                          value={(() => {
-                            const peSub = subjects.find(s => (s.subjectCode || '').includes('UCSE') || (s.subjectName || '').toLowerCase().includes('program') || (s.subjectName || '').toLowerCase().includes('elective') || s.subjectType === 'elective');
-                            return peSub ? fixedTimings[divisions[0]?.name]?.[peSub._id]?.[idx]?.day || '' : '';
-                          })()}
-                          onChange={e => handleGlobalElectiveTimingChange('pe', idx, 'day', e.target.value)}
-                        >
-                          <option value="">Day</option>
-                          <option value="N/A">N/A</option>
-                          <option value="Monday">Mon</option>
-                          <option value="Tuesday">Tue</option>
-                          <option value="Wednesday">Wed</option>
-                          <option value="Thursday">Thu</option>
-                          <option value="Friday">Fri</option>
-                          <option value="Saturday">Sat</option>
-                        </select>
-                        <select 
-                          className="min-w-0 p-1.5 bg-white border border-gray-200 rounded text-xs flex-1 outline-none font-medium"
-                          value={(() => {
-                            const peSub = subjects.find(s => (s.subjectCode || '').includes('UCSE') || (s.subjectName || '').toLowerCase().includes('program') || (s.subjectName || '').toLowerCase().includes('elective') || s.subjectType === 'elective');
-                            return peSub ? fixedTimings[divisions[0]?.name]?.[peSub._id]?.[idx]?.time || '' : '';
-                          })()}
-                          onChange={e => handleGlobalElectiveTimingChange('pe', idx, 'time', e.target.value)}
-                        >
-                          <option value="">Time</option>
-                          <option value="N/A">N/A</option>
-                          {["08:00", "09:00", "10:30", "11:30", "12:30", "14:30", "15:30"].map(t => <option key={t} value={t}>{t}</option>)}
-                        </select>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Generic Input for other subjects per division */}
-              <div className="pt-2 border-t border-gray-100 mt-2">
-                <h4 className="text-[10px] font-bold text-gray-400 uppercase mb-2">Custom Slot Timings per Division</h4>
-                <div className="flex flex-col gap-2 mb-3">
-                   <div className="flex gap-2">
-                     <select className="p-2 bg-gray-50 border border-gray-200 rounded text-xs flex-1 outline-none font-medium" value={selectedFixDiv} onChange={e => setSelectedFixDiv(e.target.value)}>
-                       <option value="ALL">All Divisions</option>
-                       {divisions.map(d => <option key={d.name} value={d.name}>{d.name} Only</option>)}
-                     </select>
-                     <select className="p-2 bg-gray-50 border border-gray-200 rounded text-xs flex-1 outline-none font-medium" value={selectedFixSub} onChange={e => setSelectedFixSub(e.target.value)}>
-                       <option value="">-- Select Subject --</option>
-                       {subjects.map(s => <option key={s._id} value={s._id}>{s.subjectName}</option>)}
-                     </select>
-                   </div>
-                   <div className="flex gap-2">
-                     <select className="min-w-0 p-2 bg-gray-50 border border-gray-200 rounded text-xs flex-1 outline-none font-medium" value={selectedFixDay} onChange={e => setSelectedFixDay(e.target.value)}>
-                       <option value="">Select Day</option>
-                       <option value="N/A">N/A</option>
-                       <option value="Monday">Mon</option>
-                       <option value="Tuesday">Tue</option>
-                       <option value="Wednesday">Wed</option>
-                       <option value="Thursday">Thu</option>
-                       <option value="Friday">Fri</option>
-                       <option value="Saturday">Sat</option>
-                     </select>
-                     <select className="min-w-0 p-2 bg-gray-50 border border-gray-200 rounded text-xs flex-1 outline-none font-medium" value={selectedFixTime} onChange={e => setSelectedFixTime(e.target.value)}>
-                       <option value="">Select Time</option>
-                       <option value="N/A">N/A</option>
-                       {["08:00", "09:00", "10:30", "11:30", "12:30", "14:30", "15:30"].map(t => <option key={t} value={t}>{t}</option>)}
-                     </select>
-                   </div>
-                   <button onClick={addFixedTiming} className="bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-2 rounded text-xs font-bold transition-colors shadow-sm">
-                     Add Division Slot Timing
-                   </button>
+                  ))}
                 </div>
               </div>
-              
-              <div className="space-y-1.5">
-                {divisions.map(div => {
-                  const divTimings = fixedTimings[div.name] || {};
-                  return Object.keys(divTimings).map(subId => {
-                    const validSlots = (divTimings[subId] || []).filter(t => t.day && t.day !== 'N/A' && t.time && t.time !== 'N/A');
-                    if (validSlots.length === 0) return null;
-                    const subName = subjects.find(s => s._id === subId)?.subjectName || 'Subject';
-                    return (
-                      <div key={`${div.name}-${subId}`} className="text-[10px] text-gray-700 bg-gray-50 p-2 rounded-lg border border-gray-200 flex justify-between items-center">
-                        <div>
-                          <strong className="text-indigo-800 font-bold">[{div.name}] {subName}: </strong> 
-                          <span className="font-medium text-gray-600">{validSlots.map(t => `${t.day} @ ${t.time}`).join(' | ')}</span>
-                        </div>
-                        <button 
-                          onClick={() => {
-                            setFixedTimings(prev => {
-                              const updated = { ...prev };
-                              if (updated[div.name]) {
-                                delete updated[div.name][subId];
-                              }
-                              return updated;
-                            });
-                          }} 
-                          className="text-red-500 hover:text-red-700 font-bold p-1"
-                        >
-                          ✕
-                        </button>
-                      </div>
-                    );
-                  });
-                })}
+            )}
+
+            {/* Custom Slot Timings per Division */}
+            <div className="pt-2 border-t border-gray-100">
+              <h4 className="text-[11px] font-extrabold text-gray-700 uppercase tracking-wider mb-2.5">
+                Custom Slot Timings per Division
+              </h4>
+              <div className="space-y-2.5">
+                <div>
+                  <label className="block text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-1">Target Division</label>
+                  <select 
+                    className="w-full p-2 bg-gray-50 border border-gray-200 rounded-lg text-xs font-medium text-gray-700 outline-none focus:border-indigo-500 focus:bg-white transition-all"
+                    value={selectedFixDiv} 
+                    onChange={e => setSelectedFixDiv(e.target.value)}
+                  >
+                    <option value="ALL">All Divisions</option>
+                    {divisions.map(d => <option key={d.name} value={d.name}>{d.name} Only</option>)}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-1">Subject</label>
+                  <select 
+                    className="w-full p-2 bg-gray-50 border border-gray-200 rounded-lg text-xs font-medium text-gray-700 outline-none focus:border-indigo-500 focus:bg-white transition-all truncate"
+                    value={selectedFixSub} 
+                    onChange={e => setSelectedFixSub(e.target.value)}
+                  >
+                    <option value="">-- Select Subject --</option>
+                    {subjects.map(s => (
+                      <option key={s._id} value={s._id}>
+                        {s.subjectCode ? `${s.subjectCode} - ` : ''}{s.subjectName}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-1">Day & Time Slot</label>
+                  <div className="grid grid-cols-2 gap-2">
+                    <select 
+                      className="w-full min-w-0 p-2 bg-gray-50 border border-gray-200 rounded-lg text-xs font-medium text-gray-700 outline-none focus:border-indigo-500 focus:bg-white transition-all"
+                      value={selectedFixDay} 
+                      onChange={e => setSelectedFixDay(e.target.value)}
+                    >
+                      <option value="">Select Day</option>
+                      <option value="N/A">N/A</option>
+                      <option value="Monday">Mon</option>
+                      <option value="Tuesday">Tue</option>
+                      <option value="Wednesday">Wed</option>
+                      <option value="Thursday">Thu</option>
+                      <option value="Friday">Fri</option>
+                      <option value="Saturday">Sat</option>
+                    </select>
+                    <select 
+                      className="w-full min-w-0 p-2 bg-gray-50 border border-gray-200 rounded-lg text-xs font-medium text-gray-700 outline-none focus:border-indigo-500 focus:bg-white transition-all"
+                      value={selectedFixTime} 
+                      onChange={e => setSelectedFixTime(e.target.value)}
+                    >
+                      <option value="">Select Time</option>
+                      <option value="N/A">N/A</option>
+                      {["08:00", "09:00", "10:30", "11:30", "12:30", "14:30", "15:30"].map(t => <option key={t} value={t}>{t}</option>)}
+                    </select>
+                  </div>
+                </div>
+
+                <button 
+                  type="button"
+                  onClick={addFixedTiming} 
+                  className="w-full py-2.5 px-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition-all shadow-sm flex items-center justify-center gap-1.5"
+                >
+                  <FiClock /> Add Division Slot Timing
+                </button>
               </div>
+            </div>
+            
+            {/* Active configured slots list */}
+            <div className="space-y-1.5 pt-2">
+              {divisions.map(div => {
+                const divTimings = fixedTimings[div.name] || {};
+                return Object.keys(divTimings).map(subId => {
+                  const validSlots = (divTimings[subId] || []).filter(t => t.day && t.day !== 'N/A' && t.time && t.time !== 'N/A');
+                  if (validSlots.length === 0) return null;
+                  const subName = subjects.find(s => s._id === subId)?.subjectName || 'Subject';
+                  return (
+                    <div 
+                      key={`${div.name}-${subId}`} 
+                      className="text-xs text-gray-700 bg-gray-50 p-2.5 rounded-xl border border-gray-200 flex justify-between items-start gap-2"
+                    >
+                      <div className="min-w-0 flex-1">
+                        <p className="text-indigo-900 font-bold truncate">[{div.name}] {subName}</p> 
+                        <p className="font-medium text-gray-500 text-[11px] break-words mt-0.5">
+                          {validSlots.map(t => `${t.day} @ ${t.time}`).join(' • ')}
+                        </p>
+                      </div>
+                      <button 
+                        type="button"
+                        onClick={() => {
+                          setFixedTimings(prev => {
+                            const updated = { ...prev };
+                            if (updated[div.name]) {
+                              delete updated[div.name][subId];
+                            }
+                            return updated;
+                          });
+                        }} 
+                        className="text-gray-400 hover:text-red-600 font-bold p-1 shrink-0 transition-colors"
+                        title="Remove"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  );
+                });
+              })}
             </div>
           </div>
         </div>
@@ -1294,8 +1345,14 @@ const GenerateTimetable = () => {
                   <p className="text-sm text-green-600 mt-1">100% constraints satisfied. No clashes detected.</p>
                 </div>
                 <div className="flex gap-3">
-                  <button onClick={handleSaveTimetables} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-bold text-sm shadow-md transition-colors flex items-center gap-2">
-                    <FiCheckCircle /> Save to Database
+                  <button 
+                    onClick={handleSaveTimetables} 
+                    disabled={savingToDb}
+                    className={`bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-bold text-sm shadow-md transition-colors flex items-center gap-2 ${
+                      savingToDb ? 'opacity-70 cursor-not-allowed' : ''
+                    }`}
+                  >
+                    <FiCheckCircle /> {savingToDb ? 'Saving to Database...' : 'Save to Database'}
                   </button>
                   <button onClick={handleExportPDF} className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg font-bold text-sm shadow-md transition-colors flex items-center gap-2">
                     <FiDownload /> Export PDF
@@ -1663,6 +1720,50 @@ const GenerateTimetable = () => {
                 </div>
               ) : (
                 <div className="p-6">
+                  {/* Timetable Entry Mode Toggle (Semester 1 & 2 only) */}
+                  {(parseInt(config.semester) === 1 || parseInt(config.semester) === 2) && (
+                    <div className="mb-6 bg-gradient-to-r from-indigo-50/80 via-white to-purple-50/60 p-4 rounded-2xl border border-indigo-100 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <label className="text-xs font-extrabold text-indigo-950 uppercase tracking-wider">Timetable Entry Mode</label>
+                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${entryMode === 'dynamic' ? 'bg-indigo-100 text-indigo-700' : 'bg-emerald-100 text-emerald-700'}`}>
+                            {entryMode === 'dynamic' ? 'Dynamic Entry Active' : 'Static Entry Active'}
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-gray-600 mt-1">
+                          {entryMode === 'dynamic' 
+                            ? 'Dynamic Entry: Day and Time dropdowns enabled for Mathematics and Chemistry for CSE only. Other subjects are scheduled automatically.' 
+                            : 'Static Entry: Day and Time dropdowns enabled for every subject for strict manual schedule entry.'}
+                        </p>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-2 bg-gray-100 p-1 rounded-xl border border-gray-200 shrink-0 self-start md:self-auto">
+                        <button
+                          type="button"
+                          onClick={() => setEntryMode('dynamic')}
+                          className={`py-2 px-3.5 rounded-lg text-xs font-extrabold transition-all flex items-center justify-center gap-1.5 ${
+                            entryMode === 'dynamic'
+                              ? 'bg-white text-indigo-700 shadow-sm border border-indigo-100'
+                              : 'text-gray-500 hover:text-gray-700'
+                          }`}
+                        >
+                          <FiCpu className="text-indigo-500" /> Dynamic Entry
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setEntryMode('static')}
+                          className={`py-2 px-3.5 rounded-lg text-xs font-extrabold transition-all flex items-center justify-center gap-1.5 ${
+                            entryMode === 'static'
+                              ? 'bg-white text-indigo-700 shadow-sm border border-indigo-100'
+                              : 'text-gray-500 hover:text-gray-700'
+                          }`}
+                        >
+                          <FiCheckCircle className="text-indigo-500" /> Static Entry
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
                   {divisions.map(div => (
                     <div key={div.name} className="mb-8 last:mb-0">
                       <h4 className="text-sm font-bold text-indigo-900 mb-4 bg-indigo-50 p-3 rounded-lg border border-indigo-100 flex justify-between items-center">
@@ -1747,7 +1848,8 @@ const GenerateTimetable = () => {
                               </div>
 
                               {/* Day + Time Dropdowns for Semester 1 & 2 */}
-                              {(parseInt(config.semester) === 1 || parseInt(config.semester) === 2) && (() => {
+                              {(parseInt(config.semester) === 1 || parseInt(config.semester) === 2) && 
+                               (entryMode === 'static' || isMathematicsOrChemistryForCSE(sub)) && (() => {
                                 const slotCount = Math.max(1, sub.credits || ((sub.lectureHours || 0) + (sub.tutorialHours || 0)) || 1);
                                 return (
                                   <div className="mt-4 pt-3 border-t border-gray-200/80 bg-white/60 -mx-5 -mb-5 p-4 rounded-b-xl">
@@ -1756,7 +1858,7 @@ const GenerateTimetable = () => {
                                         <FiClock className="text-indigo-600" /> Day & Time Slots ({slotCount} slot{slotCount > 1 ? 's' : ''} • {sub.credits || slotCount} Credit{slotCount > 1 ? 's' : ''})
                                       </label>
                                       <span className="text-[10px] text-gray-500 font-medium">
-                                        {entryMode === 'static' ? '• Fixed timings for Static Entry' : '• Optional fixed timings for Dynamic Entry'}
+                                        {entryMode === 'static' ? '• Fixed timings for Static Entry' : '• Optional fixed timings for Dynamic Entry (Math/Chem)'}
                                       </span>
                                     </div>
                                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">

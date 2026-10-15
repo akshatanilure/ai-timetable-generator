@@ -312,13 +312,21 @@ exports.generateTimetableML = async (req, res) => {
 exports.saveTimetableML = async (req, res) => {
   try {
     const { semester, branch, rawSchedules } = req.body;
+    if (!rawSchedules || typeof rawSchedules !== 'object') {
+      return res.status(400).json({ success: false, error: 'rawSchedules is required and must be an object' });
+    }
+
     const Timetable = require('../models/Timetable');
     const Division = require('../models/Division');
+    const Batch = require('../models/Batch');
+    const mongoose = require('mongoose');
 
     const divisions = await Division.find({ semester, department: branch || 'CSE' });
     const saved = [];
     
     for (const [divName, schedule] of Object.entries(rawSchedules)) {
+      if (!Array.isArray(schedule)) continue;
+
       let div = divisions.find(d => d.divisionName === divName);
       if (!div) {
          div = await Division.create({
@@ -329,62 +337,70 @@ exports.saveTimetableML = async (req, res) => {
          });
       }
       
-      const Batch = require('../models/Batch');
       const formattedSchedule = [];
       for (const entry of schedule) {
         let batchId = undefined;
-        if (entry.batch && entry.batch.batchName) {
-           const normalizedBatch = entry.batch.batchName.toString().trim().replace(/^batch\s*/i, '').toUpperCase();
-           let batch = await Batch.findOne({ batchName: normalizedBatch, division: div._id });
-           if (!batch) {
-               // Calculate a fallback student count
-               const fallbackCount = Math.max(1, Math.ceil((div.strength || 60) / 3));
-               batch = await Batch.create({ batchName: normalizedBatch, division: div._id, studentCount: fallbackCount });
-           }
-           batchId = batch._id;
+        if (entry.batch) {
+          if (typeof entry.batch === 'object' && entry.batch._id && mongoose.Types.ObjectId.isValid(entry.batch._id)) {
+            batchId = entry.batch._id;
+          } else if (entry.batch.batchName) {
+            const normalizedBatch = entry.batch.batchName.toString().trim().replace(/^batch\s*/i, '').toUpperCase();
+            let batch = await Batch.findOne({ batchName: normalizedBatch, division: div._id });
+            if (!batch) {
+                const fallbackCount = Math.max(1, Math.ceil((div.strength || 60) / 3));
+                batch = await Batch.create({ batchName: normalizedBatch, division: div._id, studentCount: fallbackCount });
+            }
+            batchId = batch._id;
+          }
         }
 
         let roomId = undefined;
-        if (entry.room && entry.room._id) {
-            const mongoose = require('mongoose');
-            if (mongoose.Types.ObjectId.isValid(entry.room._id)) {
-                roomId = entry.room._id;
-            }
+        if (entry.room) {
+          const rid = typeof entry.room === 'object' ? entry.room._id : entry.room;
+          if (rid && mongoose.Types.ObjectId.isValid(rid)) {
+            roomId = rid;
+          }
         }
 
-        const mongoose = require('mongoose');
         let facultyIds = [];
         if (Array.isArray(entry.faculty)) {
           facultyIds = entry.faculty
-            .map(f => (typeof f === 'object' ? f._id : f))
+            .map(f => (typeof f === 'object' ? f?._id : f))
             .filter(id => id && mongoose.Types.ObjectId.isValid(id));
+        } else if (entry.faculty) {
+          const fid = typeof entry.faculty === 'object' ? entry.faculty?._id : entry.faculty;
+          if (fid && mongoose.Types.ObjectId.isValid(fid)) {
+            facultyIds = [fid];
+          }
         }
 
-        if (entry.batch) {
-          console.log(`SaveML Batch ${entry.batch.batchName} Raw Faculty:`, entry.faculty, `Filtered IDs (${facultyIds.length}):`, facultyIds);
-        }
+        const subjectId = (entry.subject && typeof entry.subject === 'object') ? entry.subject._id : entry.subject;
 
         formattedSchedule.push({
           day: entry.day,
           startTime: entry.startTime,
           endTime: entry.endTime,
-          subject: entry.subject._id,
+          subject: subjectId,
           faculty: facultyIds,
           room: roomId,
           batch: batchId
         });
       }
 
+      // Delete existing timetable for this semester & division to avoid stale duplicates
+      await Timetable.deleteMany({ semester, division: div._id });
+
+      const creatorId = (req.user && req.user.id) || div._id;
       const timetable = await Timetable.create({
         semester,
         division: div._id,
         generatedSchedule: formattedSchedule,
-        createdBy: req.user.id
+        createdBy: creatorId
       });
       saved.push(timetable);
     }
     
-    res.status(201).json({ success: true, data: saved });
+    res.status(201).json({ success: true, count: saved.length, data: saved });
   } catch (error) {
     console.error("SAVE ML ERROR:", error);
     res.status(500).json({ success: false, error: error.message, details: error.errors });
@@ -398,7 +414,8 @@ exports.getTimetables = async (req, res) => {
   try {
     const timetables = await Timetable.find()
       .populate('division')
-      .populate('createdBy', 'name');
+      .populate('createdBy', 'name')
+      .sort({ semester: 1, updatedAt: -1, createdAt: -1 });
     res.status(200).json({ success: true, count: timetables.length, data: timetables });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });

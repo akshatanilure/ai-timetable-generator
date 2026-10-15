@@ -23,15 +23,21 @@ const Timetables = () => {
     }
   }, []);
 
-  const fetchTimetables = useCallback(async () => {
+  const fetchTimetables = useCallback(async (preserveId = null) => {
     try {
       const res = await api.get('/timetables');
-      setTimetables(res.data.data);
-      if (res.data.data.length > 0) {
-        fetchTimetableDetails(res.data.data[0]._id);
+      const list = res.data.data || [];
+      setTimetables(list);
+      if (list.length > 0) {
+        const idToSelect = preserveId && list.some(t => t._id === preserveId)
+          ? preserveId
+          : list[0]._id;
+        fetchTimetableDetails(idToSelect);
+      } else {
+        setSelectedTimetable(null);
       }
     } catch (err) {
-      console.error('Error fetching timetables');
+      console.error('Error fetching timetables', err);
     } finally {
       setLoading(false);
     }
@@ -78,10 +84,17 @@ const Timetables = () => {
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-gray-800">Academic Timetables</h1>
-          <p className="text-sm text-gray-500">View and manage schedules for all divisions</p>
+          <p className="text-sm text-gray-500">View and manage saved timetables from MongoDB for all divisions</p>
         </div>
         
         <div className="flex items-center gap-3 print:hidden">
+          <button 
+            onClick={() => fetchTimetables(selectedTimetable?._id)}
+            className="flex items-center gap-2 px-3.5 py-2 bg-white hover:bg-gray-50 text-gray-700 border border-gray-200 rounded-lg shadow-sm transition-all font-bold text-xs"
+            title="Refresh from MongoDB"
+          >
+            <FiRefreshCw className={loading ? 'animate-spin' : ''} /> Refresh
+          </button>
           <button 
             onClick={() => window.print()}
             className="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg shadow-md transition-all font-bold text-xs"
@@ -107,10 +120,10 @@ const Timetables = () => {
                   onChange={(e) => fetchTimetableDetails(e.target.value)}
                   value={selectedTimetable?._id || ''}
                 >
-                  <option value="">-- Select --</option>
+                  <option value="">-- Select Timetable --</option>
                   {timetables.map(t => (
                     <option key={t._id} value={t._id}>
-                      Sem {t.semester} - Div {t.division?.divisionName || 'A'}
+                      Semester {t.semester} - Division {t.division?.divisionName || 'A'}
                     </option>
                   ))}
                 </select>
