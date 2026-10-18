@@ -38,7 +38,9 @@ const Sidebar = ({ isOpen }) => {
   return (
     <div className={`${isOpen ? 'translate-x-0' : '-translate-x-full'} fixed inset-y-0 left-0 z-30 w-64 bg-secondary text-white transition duration-300 transform lg:translate-x-0 lg:static lg:inset-0 print:hidden`}>
       <div className="flex items-center justify-center mt-8 px-6">
-        <span className="text-xl font-bold tracking-wider">AI TIMETABLE</span>
+        <span className="text-2xl font-black tracking-wider text-slate-900">
+          <span className="text-indigo-600">AI</span> TIMETABLE
+        </span>
       </div>
 
       <nav className="mt-10 px-4">
