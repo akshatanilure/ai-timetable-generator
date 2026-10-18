@@ -18,10 +18,17 @@ const DEFAULT_TIMETABLE_RULES = {
  * @param {number} semester - Semester number (1 to 8)
  * @returns {object} Timetable rules configuration for the semester
  */
-function getRulesForSemester(semester) {
+function getRulesForSemester(semester, program = 'UG', customStartTime = null) {
   const semNum = parseInt(semester, 10) || 1;
-  const is8amStart = [1, 2, 5].includes(semNum);
+  let is8amStart;
+  if (customStartTime !== null && customStartTime !== undefined && customStartTime !== "") {
+    is8amStart = customStartTime === "08:00" || String(customStartTime).includes("8");
+  } else {
+    is8amStart = [1, 2, 5].includes(semNum);
+  }
   const collegeStartTime = is8amStart ? "08:00" : "09:00";
+  const lunchBreakStart = is8amStart ? "12:30" : "13:30";
+  const lunchBreakEnd = "14:30";
 
   let batchConfig = {
     numBatches: 2,
@@ -31,7 +38,15 @@ function getRulesForSemester(semester) {
     fullClassFaculty: 2
   };
 
-  if ([3, 4, 5, 6].includes(semNum)) {
+  if (program === 'PG') {
+    batchConfig = {
+      numBatches: 1,
+      batchNames: ["Batch A1"],
+      pairs: [],
+      facultyPerBatch: 2,
+      fullClassFaculty: 2
+    };
+  } else if ([3, 4, 5, 6].includes(semNum)) {
     batchConfig = {
       numBatches: 3,
       batchNames: ["Batch A1", "Batch A2", "Batch A3"],
@@ -61,6 +76,10 @@ function getRulesForSemester(semester) {
     ...DEFAULT_TIMETABLE_RULES,
     semester: semNum,
     college_start_time: collegeStartTime,
+    short_break_start: "10:00",
+    short_break_end: "10:30",
+    lunch_break_start: lunchBreakStart,
+    lunch_break_end: lunchBreakEnd,
     is8amStart,
     batchConfig
   };

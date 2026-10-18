@@ -17,6 +17,7 @@ import toast from 'react-hot-toast';
 
 const Infrastructure = () => {
   // Lists & Loading State
+  const [activeProgram, setActiveProgram] = useState('UG'); // 'UG' or 'PG'
   const [rooms, setRooms] = useState([]);
   const [labs, setLabs] = useState([]);
   const [subjects, setSubjects] = useState([]);
@@ -24,14 +25,14 @@ const Infrastructure = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [activeTab, setActiveTab] = useState('rooms'); // 'rooms' | 'labs'
 
-  // Interactive Target Capacity States (saved in LocalStorage for persistence)
+  // Interactive Target Capacity States (saved in LocalStorage per program for persistence)
   const [targetRooms, setTargetRooms] = useState(() => {
-    const saved = localStorage.getItem('targetRooms');
-    return saved !== null ? parseInt(saved) : 4;
+    const saved = localStorage.getItem('targetRooms_UG');
+    return saved !== null ? parseInt(saved) : 7;
   });
   const [targetLabs, setTargetLabs] = useState(() => {
-    const saved = localStorage.getItem('targetLabs');
-    return saved !== null ? parseInt(saved) : 5;
+    const saved = localStorage.getItem('targetLabs_UG');
+    return saved !== null ? parseInt(saved) : 8;
   });
 
   // Modal Overlay States
@@ -55,27 +56,39 @@ const Infrastructure = () => {
     equipmentInput: ''
   });
 
-  // Sync targets to localStorage
+  // Sync targets to localStorage per program
   useEffect(() => {
-    localStorage.setItem('targetRooms', targetRooms.toString());
-  }, [targetRooms]);
+    localStorage.setItem(`targetRooms_${activeProgram}`, targetRooms.toString());
+  }, [targetRooms, activeProgram]);
 
   useEffect(() => {
-    localStorage.setItem('targetLabs', targetLabs.toString());
-  }, [targetLabs]);
+    localStorage.setItem(`targetLabs_${activeProgram}`, targetLabs.toString());
+  }, [targetLabs, activeProgram]);
 
-  // Initial Fetch
+  // Initial Fetch & program switch
   useEffect(() => {
-    fetchInfrastructure();
-  }, []);
+    fetchInfrastructure(activeProgram);
+  }, [activeProgram]);
 
-  const fetchInfrastructure = async () => {
+  const handleProgramChange = (prog) => {
+    if (prog === activeProgram) return;
+    setActiveProgram(prog);
+    const savedRooms = localStorage.getItem(`targetRooms_${prog}`);
+    const defaultR = prog === 'PG' ? 1 : 7;
+    setTargetRooms(savedRooms !== null ? parseInt(savedRooms) : defaultR);
+
+    const savedLabs = localStorage.getItem(`targetLabs_${prog}`);
+    const defaultL = prog === 'PG' ? 1 : 8;
+    setTargetLabs(savedLabs !== null ? parseInt(savedLabs) : defaultL);
+  };
+
+  const fetchInfrastructure = async (prog = activeProgram) => {
     try {
       setLoading(true);
       const [roomsRes, labsRes, subjectsRes] = await Promise.all([
-        api.get('/rooms'),
-        api.get('/labs'),
-        api.get('/subjects')
+        api.get('/rooms', { params: { program: prog } }),
+        api.get('/labs', { params: { program: prog } }),
+        api.get('/subjects', { params: { program: prog } })
       ]);
       const roomsData = roomsRes.data.data || [];
       const labsData = labsRes.data.data || [];
@@ -84,18 +97,18 @@ const Infrastructure = () => {
       setLabs(labsData);
       setSubjects(subjectsRes.data.data || []);
 
-      // If localStorage is not explicitly set, or holds outdated hardcoded mock placeholders (6 or 4),
-      // dynamically initialize the target states to exactly match actual seeded backend resource counts!
-      const savedRooms = localStorage.getItem('targetRooms');
-      if (savedRooms === null || parseInt(savedRooms) === 6) {
-        setTargetRooms(roomsData.length);
-        localStorage.setItem('targetRooms', roomsData.length.toString());
+      const savedRooms = localStorage.getItem(`targetRooms_${prog}`);
+      if (savedRooms === null) {
+        const defaultR = prog === 'PG' ? Math.max(1, roomsData.length) : Math.max(7, roomsData.length);
+        setTargetRooms(defaultR);
+        localStorage.setItem(`targetRooms_${prog}`, defaultR.toString());
       }
       
-      const savedLabs = localStorage.getItem('targetLabs');
-      if (savedLabs === null || parseInt(savedLabs) === 4) {
-        setTargetLabs(labsData.length);
-        localStorage.setItem('targetLabs', labsData.length.toString());
+      const savedLabs = localStorage.getItem(`targetLabs_${prog}`);
+      if (savedLabs === null) {
+        const defaultL = prog === 'PG' ? Math.max(1, labsData.length) : Math.max(8, labsData.length);
+        setTargetLabs(defaultL);
+        localStorage.setItem(`targetLabs_${prog}`, defaultL.toString());
       }
     } catch (err) {
       console.error('Error fetching infrastructure data', err);
@@ -122,8 +135,7 @@ const Infrastructure = () => {
 
         // Provision Classrooms
         if (missingRooms > 0) {
-          // Find maximum room number of format Rxxx
-          let maxNum = 100;
+          let maxNum = activeProgram === 'PG' ? 100 : 22;
           rooms.forEach(r => {
             const num = parseInt(r.roomNumber.replace(/\D/g, ''));
             if (!isNaN(num) && num > maxNum) {
@@ -132,11 +144,12 @@ const Infrastructure = () => {
           });
 
           for (let i = 1; i <= missingRooms; i++) {
-            const nextRoomNum = `R${maxNum + i}`;
+            const nextRoomNum = activeProgram === 'PG' ? `PG-${maxNum + i}` : `R${maxNum + i}`;
             await api.post('/rooms', {
               roomNumber: nextRoomNum,
-              capacity: 60,
-              roomType: 'lecture'
+              capacity: activeProgram === 'PG' ? 30 : 60,
+              roomType: 'lecture',
+              program: activeProgram
             });
             createdRoomsCount++;
           }
@@ -144,25 +157,25 @@ const Infrastructure = () => {
 
         // Provision Laboratories
         if (missingLabs > 0) {
-          // Identify potential default subject for lab support
           const labSubject = subjects.find(s => s.subjectType === 'lab') || null;
           const supportedSubjects = labSubject ? [labSubject._id] : [];
 
           for (let i = 1; i <= missingLabs; i++) {
             const labNum = labs.length + i;
-            const nextLabName = `CS Lab ${labNum}`;
+            const nextLabName = activeProgram === 'PG' ? `PG Lab ${labNum}` : `CS Lab ${labNum}`;
             await api.post('/labs', {
               labName: nextLabName,
               labType: 'computer',
               capacity: 30,
               supportedSubjects,
-              equipment: ['PCs', 'LAN Switch']
+              equipment: ['PCs', 'LAN Switch'],
+              program: activeProgram
             });
             createdLabsCount++;
           }
         }
 
-        await fetchInfrastructure();
+        await fetchInfrastructure(activeProgram);
         resolve({ rooms: createdRoomsCount, labs: createdLabsCount });
       } catch (err) {
         console.error('Auto-provisioning failed:', err);
@@ -171,8 +184,8 @@ const Infrastructure = () => {
     });
 
     toast.promise(provisionPromise, {
-      loading: 'Provisioning default Classrooms & Labs...',
-      success: (data) => `Successfully provisioned ${data.rooms} rooms and ${data.labs} labs!`,
+      loading: `Provisioning ${activeProgram} Classrooms & Labs...`,
+      success: (data) => `Successfully provisioned ${data.rooms} rooms and ${data.labs} labs for ${activeProgram}!`,
       error: 'Provisioning failed. Check for duplicate numbers/names.'
     });
   };
@@ -184,7 +197,7 @@ const Infrastructure = () => {
     if (diff > 0) {
       const provisionPromise = new Promise(async (resolve, reject) => {
         try {
-          let maxNum = 100;
+          let maxNum = activeProgram === 'PG' ? 100 : 22;
           rooms.forEach(r => {
             const num = parseInt(r.roomNumber.replace(/\D/g, ''));
             if (!isNaN(num) && num > maxNum) {
@@ -193,14 +206,15 @@ const Infrastructure = () => {
           });
 
           for (let i = 1; i <= diff; i++) {
-            const nextRoomNum = `R${maxNum + i}`;
+            const nextRoomNum = activeProgram === 'PG' ? `PG-${maxNum + i}` : `R${maxNum + i}`;
             await api.post('/rooms', {
               roomNumber: nextRoomNum,
-              capacity: 60,
-              roomType: 'lecture'
+              capacity: activeProgram === 'PG' ? 30 : 60,
+              roomType: 'lecture',
+              program: activeProgram
             });
           }
-          await fetchInfrastructure();
+          await fetchInfrastructure(activeProgram);
           resolve(diff);
         } catch (err) {
           console.error('Auto-provisioning classrooms dynamically failed:', err);
@@ -209,8 +223,8 @@ const Infrastructure = () => {
       });
 
       toast.promise(provisionPromise, {
-        loading: `Automatically creating ${diff} classrooms...`,
-        success: `Successfully created ${diff} classrooms!`,
+        loading: `Automatically creating ${diff} ${activeProgram} classrooms...`,
+        success: `Successfully created ${diff} classrooms for ${activeProgram}!`,
         error: 'Automatic creation failed.'
       });
     }
@@ -227,16 +241,17 @@ const Infrastructure = () => {
 
           for (let i = 1; i <= diff; i++) {
             const labNum = labs.length + i;
-            const nextLabName = `CS Lab ${labNum}`;
+            const nextLabName = activeProgram === 'PG' ? `PG Lab ${labNum}` : `CS Lab ${labNum}`;
             await api.post('/labs', {
               labName: nextLabName,
               labType: 'computer',
               capacity: 30,
               supportedSubjects,
-              equipment: ['PCs', 'LAN Switch']
+              equipment: ['PCs', 'LAN Switch'],
+              program: activeProgram
             });
           }
-          await fetchInfrastructure();
+          await fetchInfrastructure(activeProgram);
           resolve(diff);
         } catch (err) {
           console.error('Auto-provisioning labs dynamically failed:', err);
@@ -245,8 +260,8 @@ const Infrastructure = () => {
       });
 
       toast.promise(provisionPromise, {
-        loading: `Automatically creating ${diff} laboratories...`,
-        success: `Successfully created ${diff} laboratories!`,
+        loading: `Automatically creating ${diff} ${activeProgram} laboratories...`,
+        success: `Successfully created ${diff} laboratories for ${activeProgram}!`,
         error: 'Automatic creation failed.'
       });
     }
@@ -268,18 +283,22 @@ const Infrastructure = () => {
   const handleRoomSubmit = async (e) => {
     e.preventDefault();
     try {
+      const payload = {
+        ...roomFormData,
+        program: activeProgram
+      };
       if (editingRoom) {
-        const res = await api.put(`/rooms/${editingRoom._id}`, roomFormData);
+        const res = await api.put(`/rooms/${editingRoom._id}`, payload);
         setRooms(rooms.map(r => r._id === editingRoom._id ? res.data.data : r));
         toast.success('Classroom updated successfully');
       } else {
-        const res = await api.post('/rooms', roomFormData);
+        const res = await api.post('/rooms', payload);
         setRooms([...rooms, res.data.data]);
         toast.success('Classroom added successfully');
       }
       setIsRoomModalOpen(false);
       setEditingRoom(null);
-      setRoomFormData({ roomNumber: '', capacity: 60, roomType: 'lecture' });
+      setRoomFormData({ roomNumber: '', capacity: activeProgram === 'PG' ? 30 : 60, roomType: 'lecture' });
     } catch (err) {
       toast.error(err.response?.data?.error || 'Classroom operation failed');
     }
@@ -316,7 +335,8 @@ const Infrastructure = () => {
         labType: labFormData.labType,
         capacity: parseInt(labFormData.capacity) || 30,
         supportedSubjects: labFormData.supportedSubjects,
-        equipment: labFormData.equipmentInput.split(',').map(eq => eq.trim()).filter(Boolean)
+        equipment: labFormData.equipmentInput.split(',').map(eq => eq.trim()).filter(Boolean),
+        program: activeProgram
       };
 
       if (editingLab) {
@@ -381,20 +401,48 @@ const Infrastructure = () => {
 
   return (
     <div className="space-y-6">
-      {/* Title Header */}
+      {/* Title Header with UG/PG Toggle */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-800 flex items-center">
-            <FiBox className="text-indigo-600 mr-2" /> Rooms & Labs Management
-          </h1>
-          <p className="text-sm text-gray-500">Configure targets and allocate scheduling spaces across your departments</p>
+        <div className="flex items-center gap-4">
+          {/* Program Toggle: UG vs PG */}
+          <div className="flex bg-gray-100 p-1 rounded-xl border border-gray-200">
+            <button
+              onClick={() => handleProgramChange('UG')}
+              className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                activeProgram === 'UG'
+                  ? 'bg-white text-indigo-700 shadow-sm'
+                  : 'text-gray-500 hover:text-gray-900'
+              }`}
+            >
+              UG (B.Tech)
+            </button>
+            <button
+              onClick={() => handleProgramChange('PG')}
+              className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                activeProgram === 'PG'
+                  ? 'bg-white text-indigo-700 shadow-sm'
+                  : 'text-gray-500 hover:text-gray-900'
+              }`}
+            >
+              PG (M.Tech)
+            </button>
+          </div>
+
+          <div>
+            <h1 className="text-2xl font-bold text-gray-800 flex items-center">
+              <FiBox className="text-indigo-600 mr-2" /> Rooms & Labs Management
+            </h1>
+            <p className="text-sm text-gray-500">
+              Configure targets and allocate scheduling spaces for {activeProgram === 'PG' ? 'PG (M.Tech)' : 'UG (B.Tech)'}
+            </p>
+          </div>
         </div>
         <div className="flex gap-2">
           {activeTab === 'rooms' ? (
             <button 
               onClick={() => {
                 setEditingRoom(null);
-                setRoomFormData({ roomNumber: '', capacity: 60, roomType: 'lecture' });
+                setRoomFormData({ roomNumber: '', capacity: activeProgram === 'PG' ? 30 : 60, roomType: 'lecture' });
                 setIsRoomModalOpen(true);
               }}
               className="flex items-center justify-center px-4 py-2 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition-all font-bold text-xs shadow-md shadow-indigo-100"
@@ -682,8 +730,13 @@ const Infrastructure = () => {
       {isRoomModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-40 backdrop-blur-sm animate-in fade-in duration-200">
           <div className="bg-white p-8 rounded-3xl shadow-2xl border border-gray-100 max-w-md w-full relative animate-in zoom-in-95 duration-200">
-            <h2 className="text-xl font-bold text-gray-800 mb-6 flex items-center gap-2">
-              <FiBox className="text-indigo-600" /> {editingRoom ? 'Modify Classroom' : 'Add New Classroom'}
+            <h2 className="text-xl font-bold text-gray-800 mb-6 flex items-center justify-between">
+              <span className="flex items-center gap-2">
+                <FiBox className="text-indigo-600" /> {editingRoom ? 'Modify Classroom' : 'Add New Classroom'}
+              </span>
+              <span className="text-xs bg-indigo-100 text-indigo-800 px-2.5 py-0.5 rounded-full font-extrabold border border-indigo-200">
+                {activeProgram}
+              </span>
             </h2>
             <form onSubmit={handleRoomSubmit} className="space-y-5">
               <div>
@@ -750,8 +803,13 @@ const Infrastructure = () => {
       {isLabModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-40 backdrop-blur-sm animate-in fade-in duration-200">
           <div className="bg-white p-8 rounded-3xl shadow-2xl border border-gray-100 max-w-lg w-full relative animate-in zoom-in-95 duration-200 max-h-[90vh] overflow-y-auto">
-            <h2 className="text-xl font-bold text-gray-800 mb-6 flex items-center gap-2">
-              <FiActivity className="text-teal-600" /> {editingLab ? 'Modify Laboratory' : 'Add New Laboratory'}
+            <h2 className="text-xl font-bold text-gray-800 mb-6 flex items-center justify-between">
+              <span className="flex items-center gap-2">
+                <FiActivity className="text-teal-600" /> {editingLab ? 'Modify Laboratory' : 'Add New Laboratory'}
+              </span>
+              <span className="text-xs bg-teal-100 text-teal-800 px-2.5 py-0.5 rounded-full font-extrabold border border-teal-200">
+                {activeProgram}
+              </span>
             </h2>
             <form onSubmit={handleLabSubmit} className="space-y-5">
               <div>

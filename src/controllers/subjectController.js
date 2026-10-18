@@ -5,10 +5,16 @@ const Subject = require('../models/Subject');
 // @access  Private
 exports.getSubjects = async (req, res) => {
   try {
-    const { semester, branch } = req.query;
+    const { semester, branch, program } = req.query;
     const filter = {};
-    if (semester) filter.semester = semester;
-    if (branch) filter.branch = branch;
+    if (semester && semester !== 'All') filter.semester = Number(semester);
+    if (branch && branch !== 'All') filter.branch = branch;
+    const prog = program || 'UG';
+    if (prog === 'UG') {
+      filter.$or = [{ program: 'UG' }, { program: { $exists: false } }, { program: null }];
+    } else {
+      filter.program = prog;
+    }
 
     const subjects = await Subject.find(filter);
     res.status(200).json({
@@ -41,7 +47,17 @@ exports.getSubject = async (req, res) => {
 // @access  Private (Admin)
 exports.createSubject = async (req, res) => {
   try {
-    const subject = await Subject.create(req.body);
+    const data = { ...req.body };
+    if (!data.program) data.program = 'UG';
+    if (data.subjectCategory) {
+      data.elective = data.subjectCategory !== 'Compulsory Subject';
+    } else if (data.elective !== undefined) {
+      data.subjectCategory = data.elective ? 'Elective 1' : 'Compulsory Subject';
+    } else {
+      data.subjectCategory = 'Compulsory Subject';
+      data.elective = false;
+    }
+    const subject = await Subject.create(data);
     res.status(201).json({ success: true, data: subject });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
@@ -53,7 +69,13 @@ exports.createSubject = async (req, res) => {
 // @access  Private (Admin)
 exports.updateSubject = async (req, res) => {
   try {
-    const subject = await Subject.findByIdAndUpdate(req.params.id, req.body, {
+    const data = { ...req.body };
+    if (data.subjectCategory !== undefined) {
+      data.elective = data.subjectCategory !== 'Compulsory Subject';
+    } else if (data.elective !== undefined) {
+      data.subjectCategory = data.elective ? 'Elective 1' : 'Compulsory Subject';
+    }
+    const subject = await Subject.findByIdAndUpdate(req.params.id, data, {
       new: true,
       runValidators: true,
     });

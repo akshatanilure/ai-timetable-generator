@@ -9,6 +9,14 @@ exports.validateSubject = [
   body('subjectType')
     .isIn(['theory', 'lab', 'project', 'elective'])
     .withMessage('Invalid subject type'),
+  body('program')
+    .optional()
+    .isIn(['UG', 'PG'])
+    .withMessage('Program must be either UG or PG'),
+  body('subjectCategory')
+    .optional()
+    .isString()
+    .withMessage('Subject category must be a string'),
   (req, res, next) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {

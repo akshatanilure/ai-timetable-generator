@@ -1,11 +1,13 @@
 import React from 'react';
 
-const TimetableGrid = ({ schedule }) => {
+const TimetableGrid = ({ schedule, timetable }) => {
   const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
   const has1230Slot = (schedule || []).some(s => s.startTime === '12:30');
+  const has0800Slot = (schedule || []).some(s => s.startTime === '08:00');
+  const is8amStart = timetable?.settings?.college_start_time === '08:00' || has0800Slot;
 
   const gridSlots = [
-    { start: '08:00', end: '09:00', type: 'class' },
+    ...(is8amStart ? [{ start: '08:00', end: '09:00', type: 'class' }] : []),
     { start: '09:00', end: '10:00', type: 'class' },
     { start: '10:00', end: '10:30', type: 'short_break', label: 'T E A   B R E A K' },
     { start: '10:30', end: '11:30', type: 'class' },
@@ -80,12 +82,50 @@ const TimetableGrid = ({ schedule }) => {
   };
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-4">
+      {timetable && (
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-gradient-to-r from-indigo-50/90 via-purple-50/50 to-white p-3.5 rounded-xl border border-indigo-100 shadow-2xs">
+          {/* Left Corner Division, Student Count & Room */}
+          <div className="flex items-center gap-2.5">
+            <span className="bg-gradient-to-r from-indigo-700 to-indigo-900 text-white font-extrabold text-xs px-3 py-1 rounded-lg shadow-2xs">
+              Division: {timetable.division?.divisionName || 'DIV-A'}
+            </span>
+            <span className="bg-white text-indigo-900 font-bold text-xs px-2.5 py-0.5 rounded-full border border-indigo-200 shadow-2xs">
+              👥 {timetable.division?.strength || 60} Students
+            </span>
+            {timetable.division?.assignedRoom && (
+              <span className="text-xs font-semibold text-gray-700">
+                🏢 Room: <strong className="text-indigo-950 font-bold">{timetable.division.assignedRoom}</strong>
+              </span>
+            )}
+            <span className="text-[10px] font-extrabold text-purple-700 bg-purple-100/70 px-2 py-0.5 rounded-full border border-purple-200">
+              {timetable.division?.program || 'UG'}
+            </span>
+          </div>
+
+          <div className="text-right">
+            <span className="text-xs font-extrabold text-indigo-900">Semester {timetable.semester} Timetable</span>
+          </div>
+        </div>
+      )}
+
       <div className="overflow-x-auto bg-white rounded shadow border border-gray-300 p-2 print:overflow-visible print:border-none print:shadow-none print:p-0">
         <table className="w-full border-collapse border border-gray-400 text-sm timetable-grid-table">
           <thead>
             <tr className="bg-gray-100">
-              <th className="border border-gray-400 p-2 w-24">Days</th>
+              <th className="border border-gray-400 p-2 w-28 bg-indigo-50/80 text-center">
+                <div className="flex flex-col items-center">
+                  <span className="text-xs font-black text-indigo-950">
+                    {timetable?.division?.divisionName || 'Division'}
+                  </span>
+                  {timetable?.division?.strength && (
+                    <span className="text-[10px] font-bold text-indigo-700 bg-white px-1.5 py-0.2 rounded border border-indigo-200 shadow-2xs my-0.5">
+                      {timetable.division.strength} Students
+                    </span>
+                  )}
+                  <span className="text-[9px] font-bold text-gray-500 uppercase">Day \ Time</span>
+                </div>
+              </th>
               {gridSlots.map((slot, i) => (
                 <th key={i} className="border border-gray-400 p-2 min-w-[120px] font-semibold text-center">
                   <div className="flex flex-col">

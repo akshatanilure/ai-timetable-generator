@@ -38,9 +38,16 @@ const Register = () => {
     setLoading(true);
     const toastId = toast.loading('Creating your account...');
     try {
-      await register(formData);
+      const resData = await register(formData);
       toast.success('Registration successful! Welcome.', { id: toastId });
-      navigate('/dashboard');
+      const actualRole = resData?.role || formData.role;
+      if (actualRole === 'admin') {
+        navigate('/admin/dashboard', { replace: true });
+      } else if (actualRole === 'teacher') {
+        navigate('/teacher/dashboard', { replace: true });
+      } else {
+        navigate('/student/dashboard', { replace: true });
+      }
     } catch (err) {
       const errMsg = err.response?.data?.error || 'Registration failed. Please try again.';
       setError(errMsg);

@@ -12,12 +12,12 @@ const router = express.Router();
 
 router
   .route('/')
-  .get(protect, getConstraints)
+  .get(protect, isAdmin, getConstraints)
   .post(protect, isAdmin, upsertConstraint);
 
 router
   .route('/semester/:semester')
-  .get(protect, getConstraintBySemester);
+  .get(protect, isAdmin, getConstraintBySemester);
 
 router
   .route('/:id')

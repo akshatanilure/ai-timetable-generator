@@ -28,6 +28,7 @@ const GenerateTimetable = () => {
   const [showPreview, setShowPreview] = useState(false);
   const [numDivisions, setNumDivisions] = useState(1);
   const [divisions, setDivisions] = useState([{ name: 'DIV-A', strength: 60 }]);
+  const [totalStudentStrength, setTotalStudentStrength] = useState(60);
   const [entryMode, setEntryMode] = useState('dynamic'); // 'dynamic' or 'static'
   
   const [fixedTimings, setFixedTimings] = useState({});
@@ -48,7 +49,128 @@ const GenerateTimetable = () => {
   const [savedSemesters, setSavedSemesters] = useState({});
   const [bySemesterResults, setBySemesterResults] = useState({});
   const [previewSemester, setPreviewSemester] = useState(1);
+  const [program, setProgram] = useState(null); // 'UG' or 'PG'
+  const [allEntryModes, setAllEntryModes] = useState({});
   const [savingToDb, setSavingToDb] = useState(false);
+  const [isSavedToDb, setIsSavedToDb] = useState(false);
+  const [showViewModal, setShowViewModal] = useState(false);
+
+  const getDefaultStartTime = (sem) => {
+    const s = parseInt(sem, 10);
+    return [1, 2, 5].includes(s) ? '08:00' : '09:00';
+  };
+
+  const [startTime, setStartTime] = useState(getDefaultStartTime(config.semester));
+  const [allStartTimes, setAllStartTimes] = useState({});
+
+  const handleStartTimeChange = (time) => {
+    setStartTime(time);
+    if (config.semester) {
+      setAllStartTimes(prev => ({ ...prev, [config.semester]: time }));
+    }
+  };
+
+  const isEntryModeSupported = (sem = config.semester, prog = program) => {
+    const s = parseInt(sem);
+    const activeProg = prog || 'UG';
+    if (activeProg === 'PG') {
+      return [1, 2, 3, 4].includes(s);
+    }
+    return s === 1 || s === 2;
+  };
+
+  const handleEntryModeChange = (mode) => {
+    setEntryMode(mode);
+    if (config.semester) {
+      setAllEntryModes(prev => ({ ...prev, [config.semester]: mode }));
+    }
+  };
+
+  const [allocatedClassroomsCount, setAllocatedClassroomsCount] = useState(1);
+
+  const autoAllocateDivisions = (strengthVal, customRoomsCount, customRooms) => {
+    const total = parseInt(strengthVal) !== undefined && !isNaN(parseInt(strengthVal)) ? parseInt(strengthVal) : (program === 'PG' ? 30 : 60);
+    const roomList = customRooms || rooms;
+    const availableClassrooms = roomList.filter(r => r.roomType === 'lecture' || !r.roomType);
+    const availableCount = availableClassrooms.length;
+
+    // Calculate number of divisions based on total student strength and available classrooms
+    // E.g.: 60 students with 2 available classrooms -> 2 divisions of 30 each.
+    // 60 students with 3 classrooms -> 3 divisions of 20 each.
+    let numDivs = 1;
+    if (customRoomsCount && customRoomsCount > 0) {
+      numDivs = Math.min(Math.max(1, customRoomsCount), availableCount > 0 ? availableCount : customRoomsCount);
+    } else if (availableCount > 1) {
+      if (availableCount <= 3 && total % availableCount === 0) {
+        numDivs = availableCount;
+      } else {
+        const firstCap = availableClassrooms[0]?.capacity || 60;
+        numDivs = Math.min(availableCount, Math.max(1, Math.ceil(total / firstCap)));
+      }
+    }
+    if (numDivs < 1) numDivs = 1;
+
+    // Divide the total strength as evenly as possible ensuring sum equals original strength
+    const base = Math.floor(total / numDivs);
+    const remainder = total % numDivs;
+
+    const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+    const newDivs = [];
+    for (let i = 0; i < numDivs; i++) {
+      const divStrength = base + (i < remainder ? 1 : 0);
+      const assignedRoom = availableClassrooms[i % (availableClassrooms.length || 1)];
+      const rNum = assignedRoom?.roomNumber || `Room-${i + 1}`;
+      const displayRoom = rNum.startsWith('R') || rNum.startsWith('PG') ? rNum : `Room ${rNum}`;
+      newDivs.push({
+        name: `DIV-${alphabet[i]}`,
+        strength: divStrength,
+        assignedRoom: displayRoom,
+        rawRoomNumber: rNum,
+        roomId: assignedRoom ? assignedRoom._id : null,
+        roomCapacity: assignedRoom ? assignedRoom.capacity : (program === 'PG' ? 30 : 60)
+      });
+    }
+
+    setNumDivisions(numDivs);
+    setDivisions(newDivs);
+    setAllocatedClassroomsCount(numDivs);
+    return newDivs;
+  };
+
+  const getGroupedSemesters = () => {
+    if (program === 'PG') {
+      return cycle === 'odd' ? [3] : [4];
+    }
+    return cycle === 'odd' ? [3, 5, 7] : [4, 6];
+  };
+
+  const getAllSemestersForCycle = () => {
+    if (program === 'PG') {
+      return cycle === 'odd' ? [1, 3] : [2, 4];
+    }
+    return cycle === 'odd' ? [1, 3, 5, 7] : [2, 4, 6];
+  };
+
+  const handleProgramChange = async (newProgram) => {
+    setProgram(newProgram);
+    const validSems = newProgram === 'PG'
+      ? (cycle === 'odd' ? [1, 3] : [2, 4])
+      : (cycle === 'odd' ? [1, 3, 5, 7] : [2, 4, 6]);
+
+    let targetSem = config.semester;
+    if (!validSems.includes(config.semester)) {
+      targetSem = genMode === 'priority'
+        ? (cycle === 'odd' ? 1 : 2)
+        : (cycle === 'odd' ? 3 : 4);
+      setConfig(prev => ({ ...prev, semester: targetSem }));
+      setPreviewSemester(targetSem);
+      setStartTime(allStartTimes[targetSem] || getDefaultStartTime(targetSem));
+    }
+    const updatedRooms = await fetchRooms(newProgram);
+    const defaultStr = newProgram === 'PG' ? 30 : 60;
+    setTotalStudentStrength(defaultStr);
+    autoAllocateDivisions(defaultStr, null, updatedRooms);
+  };
 
   const handleCycleChange = (newCycle) => {
     setCycle(newCycle);
@@ -56,6 +178,8 @@ const GenerateTimetable = () => {
     const prioritySem = newCycle === 'odd' ? 1 : 2;
     setConfig(prev => ({ ...prev, semester: prioritySem }));
     setPreviewSemester(prioritySem);
+    setEntryMode(allEntryModes[prioritySem] || 'dynamic');
+    setStartTime(allStartTimes[prioritySem] || getDefaultStartTime(prioritySem));
   };
 
   const handleModeChange = (newMode) => {
@@ -64,10 +188,14 @@ const GenerateTimetable = () => {
       const prioritySem = cycle === 'odd' ? 1 : 2;
       setConfig(prev => ({ ...prev, semester: prioritySem }));
       setPreviewSemester(prioritySem);
+      setEntryMode(allEntryModes[prioritySem] || 'dynamic');
+      setStartTime(allStartTimes[prioritySem] || getDefaultStartTime(prioritySem));
     } else {
       const groupedDefaultSem = cycle === 'odd' ? 3 : 4;
       setConfig(prev => ({ ...prev, semester: groupedDefaultSem }));
       setPreviewSemester(groupedDefaultSem);
+      setEntryMode(allEntryModes[groupedDefaultSem] || 'dynamic');
+      setStartTime(allStartTimes[groupedDefaultSem] || getDefaultStartTime(groupedDefaultSem));
     }
   };
 
@@ -78,9 +206,12 @@ const GenerateTimetable = () => {
       setAllDivisions(prev => ({ ...prev, [currentSem]: divisions }));
       setAllFixedTimings(prev => ({ ...prev, [currentSem]: fixedTimings }));
       setAllSubjects(prev => ({ ...prev, [currentSem]: subjects }));
+      setAllEntryModes(prev => ({ ...prev, [currentSem]: entryMode }));
+      setAllStartTimes(prev => ({ ...prev, [currentSem]: startTime }));
     }
 
     setConfig(prev => ({ ...prev, semester: semNum }));
+    setStartTime(allStartTimes[semNum] || getDefaultStartTime(semNum));
 
     if (allDivisions[semNum]) {
       setDivisions(allDivisions[semNum]);
@@ -95,6 +226,11 @@ const GenerateTimetable = () => {
     if (allFixedTimings[semNum]) {
       setFixedTimings(allFixedTimings[semNum]);
     }
+    if (allEntryModes[semNum]) {
+      setEntryMode(allEntryModes[semNum]);
+    } else {
+      setEntryMode('dynamic');
+    }
   };
 
   const handleSaveSemesterInputs = (semNum) => {
@@ -103,6 +239,8 @@ const GenerateTimetable = () => {
     setAllFacultyMappings(prev => ({ ...prev, [s]: facultyMapping }));
     setAllFixedTimings(prev => ({ ...prev, [s]: fixedTimings }));
     setAllSubjects(prev => ({ ...prev, [s]: subjects }));
+    setAllEntryModes(prev => ({ ...prev, [s]: entryMode }));
+    setAllStartTimes(prev => ({ ...prev, [s]: startTime }));
     setSavedSemesters(prev => ({ ...prev, [s]: true }));
     alert(`Semester ${s} inputs saved successfully!`);
   };
@@ -132,27 +270,30 @@ const GenerateTimetable = () => {
 
   useEffect(() => {
     fetchFaculties();
-    fetchRooms();
+    fetchRooms(program || 'UG');
   }, []);
 
-  const fetchRooms = async () => {
+  const fetchRooms = async (prog = program || 'UG') => {
     try {
-      const res = await api.get('/rooms');
-      setRooms(res.data.data);
-      if (res.data.data.length > 0) {
-        setSelectedRoomId(res.data.data[0]._id);
+      const res = await api.get('/rooms', { params: { program: prog } });
+      const roomList = res.data.data || [];
+      setRooms(roomList);
+      if (roomList.length > 0) {
+        setSelectedRoomId(roomList[0]._id);
       }
+      return roomList;
     } catch (err) {
       console.error('Error fetching rooms', err);
+      return [];
     }
   };
 
   useEffect(() => {
     if (config.semester && config.branch) {
-      fetchSubjects();
+      fetchSubjects(program || 'UG');
       fetchFaculties();
     }
-  }, [config.semester, config.branch]);
+  }, [config.semester, config.branch, program]);
 
   const fetchFaculties = async () => {
     try {
@@ -163,9 +304,9 @@ const GenerateTimetable = () => {
     }
   };
 
-  const fetchSubjects = async () => {
+  const fetchSubjects = async (prog = program || 'UG') => {
     try {
-      const res = await api.get(`/subjects?semester=${config.semester}&branch=${config.branch}`);
+      const res = await api.get(`/subjects?semester=${config.semester}&branch=${config.branch}&program=${prog}`);
       setSubjects(res.data.data);
       
       const peSub = res.data.data.find(s => (s.subjectCode || '').includes('UCSE') || (s.subjectName || '').toLowerCase().includes('program') || (s.subjectName || '').toLowerCase().includes('elective') || s.subjectType === 'elective');
@@ -298,15 +439,23 @@ const GenerateTimetable = () => {
   const handleNumDivisionsChange = (e) => {
     let num = parseInt(e.target.value) || 1;
     if (num < 1) num = 1;
-    if (num > 10) num = 10;
-    setNumDivisions(num);
-    
-    const newDivs = [];
-    const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
-    for (let i = 0; i < num; i++) {
-      newDivs.push({ name: `DIV-${alphabet[i]}`, strength: divisions[i]?.strength || 60 });
-    }
-    setDivisions(newDivs);
+    const maxRooms = Math.max(1, rooms.filter(r => r.roomType === 'lecture' || !r.roomType).length);
+    if (num > maxRooms) num = maxRooms;
+    setAllocatedClassroomsCount(num);
+    autoAllocateDivisions(totalStudentStrength, num);
+  };
+
+  const handleTotalStrengthChange = (val) => {
+    const num = parseInt(val) || 0;
+    setTotalStudentStrength(num);
+    autoAllocateDivisions(num, allocatedClassroomsCount);
+  };
+
+  const handleClassroomsCountChange = (val) => {
+    const maxRooms = Math.max(1, rooms.filter(r => r.roomType === 'lecture' || !r.roomType).length);
+    const count = Math.max(1, Math.min(maxRooms, parseInt(val) || 1));
+    setAllocatedClassroomsCount(count);
+    autoAllocateDivisions(totalStudentStrength, count);
   };
 
   const handleStrengthChange = (index, val) => {
@@ -397,8 +546,13 @@ const GenerateTimetable = () => {
   };
 
   const handleGenerate = async () => {
+    if (!program) {
+      alert('Please select a program (UG or PG) before generating.');
+      return;
+    }
+
     if (genMode === 'grouped') {
-      const semsToGenerate = cycle === 'odd' ? [3, 5, 7] : [4, 6];
+      const semsToGenerate = getGroupedSemesters();
       const unsaved = semsToGenerate.filter(s => !savedSemesters[s]);
       if (unsaved.length > 0) {
         alert(`Please save inputs semester by semester before generating.\nUnsaved semesters: ${unsaved.map(s => `Semester ${s}`).join(', ')}`);
@@ -409,6 +563,7 @@ const GenerateTimetable = () => {
     setLoading(true);
     setProgress(10);
     setResult(null);
+    setIsSavedToDb(false);
     
     const interval = setInterval(() => {
       setProgress(prev => (prev < 90 ? prev + 10 : prev));
@@ -425,6 +580,7 @@ const GenerateTimetable = () => {
         const semDivs = allDivisions[prioritySem] || divisions;
         const semMapping = allFacultyMappings[prioritySem] || facultyMapping;
         const semFixed = allFixedTimings[prioritySem] || fixedTimings;
+        const semStartTime = allStartTimes[prioritySem] || (prioritySem === parseInt(config.semester) ? startTime : getDefaultStartTime(prioritySem));
 
         const res = await api.post('/timetables/generate-ml', {
           branch: config.branch,
@@ -433,27 +589,24 @@ const GenerateTimetable = () => {
           divisions: semDivs,
           facultyMaxWorkloads,
           fixedTimings: semFixed,
-          entryMode: (config.semester === 1 || config.semester === 2) ? entryMode : 'dynamic'
+          entryMode: isEntryModeSupported(prioritySem, program) ? (allEntryModes[prioritySem] || entryMode) : 'dynamic',
+          program: program || 'UG',
+          startTime: semStartTime
         });
 
-        // Automatically save Priority Timetable to DB to lock workloads and rooms
-        await api.post('/timetables/save-ml', {
-          semester: prioritySem,
-          branch: config.branch,
-          rawSchedules: res.data.data.rawSchedules
-        });
-
+        // Timetable is NOT automatically saved to MongoDB. User can preview and click "Save to Database".
         setProgress(100);
         setResult(res.data);
         setBySemesterResults({
           [prioritySem]: res.data.data
         });
         setPreviewSemester(prioritySem);
-        setShowPreview(true);
-        alert(`Priority ${prioritySem}${prioritySem === 1 ? 'st' : 'nd'} Semester Timetable generated & saved successfully! Workloads and rooms are now locked for this priority semester.`);
+        setShowPreview(false);
+        setActiveTab('division');
+        setShowViewModal(true);
       } else {
-        // Grouped Generation (3, 5, 7 for Odd cycle; 4, 6 for Even cycle)
-        const semsToGenerate = cycle === 'odd' ? [3, 5, 7] : [4, 6];
+        // Grouped Generation
+        const semsToGenerate = getGroupedSemesters();
         const combinedMatrix = {};
         const combinedRawSchedules = {};
         const newBySemesterResults = {};
@@ -466,6 +619,13 @@ const GenerateTimetable = () => {
           const semDivs = allDivisions[semNum] || divisions;
           const semMapping = allFacultyMappings[semNum] || facultyMapping;
           const semFixed = allFixedTimings[semNum] || fixedTimings;
+          const semStartTime = allStartTimes[semNum] || (semNum === parseInt(config.semester) ? startTime : getDefaultStartTime(semNum));
+
+          // Provide previously generated in-memory schedules to backend for workload calculation
+          const inMem = Object.entries(newBySemesterResults).map(([s, data]) => ({
+            semester: parseInt(s, 10),
+            rawSchedules: data.rawSchedules
+          }));
 
           const res = await api.post('/timetables/generate-ml', {
             branch: config.branch,
@@ -473,16 +633,14 @@ const GenerateTimetable = () => {
             facultyMapping: semMapping,
             divisions: semDivs,
             facultyMaxWorkloads,
-            fixedTimings: semFixed
+            fixedTimings: semFixed,
+            entryMode: isEntryModeSupported(semNum, program) ? (allEntryModes[semNum] || entryMode) : 'dynamic',
+            program: program || 'UG',
+            startTime: semStartTime,
+            inMemoryTimetables: inMem
           });
 
-          // Save each semester immediately so next semester in group gets updated same-parity workloads & room locks
-          await api.post('/timetables/save-ml', {
-            semester: semNum,
-            branch: config.branch,
-            rawSchedules: res.data.data.rawSchedules
-          });
-
+          // In-memory collection only, not saved to MongoDB automatically
           if (res.data && res.data.data) {
             Object.assign(combinedMatrix, res.data.data.matrix || {});
             Object.assign(combinedRawSchedules, res.data.data.rawSchedules || {});
@@ -503,8 +661,9 @@ const GenerateTimetable = () => {
         });
         setBySemesterResults(newBySemesterResults);
         setPreviewSemester(semsToGenerate[0]);
-        setShowPreview(true);
-        alert(`Grouped Timetables for Semesters ${semsToGenerate.join(', ')} generated and saved successfully according to their own inputs!`);
+        setShowPreview(false);
+        setActiveTab('division');
+        setShowViewModal(true);
       }
     } catch (err) {
       console.error("Generation error:", err);
@@ -516,12 +675,15 @@ const GenerateTimetable = () => {
   };
 
   const handleExportPDF = () => {
-    const element = document.getElementById('timetable-preview');
-    if (!element) return;
+    const element = document.getElementById('timetable-preview-container') || document.getElementById('timetable-preview');
+    if (!element) {
+      alert('No timetable preview found to export.');
+      return;
+    }
     
     const opt = {
-      margin:       0.5,
-      filename:     `Timetable_Sem${config.semester}_${config.branch}.pdf`,
+      margin:       0.4,
+      filename:     `Timetable_${program || 'UG'}_Sem${previewSemester || config.semester}_${config.branch || 'CSE'}.pdf`,
       image:        { type: 'jpeg', quality: 0.98 },
       html2canvas:  { scale: 2, useCORS: true },
       jsPDF:        { unit: 'in', format: 'a4', orientation: 'landscape' }
@@ -747,24 +909,34 @@ const GenerateTimetable = () => {
       const semKeys = bySemesterResults ? Object.keys(bySemesterResults) : [];
       if (semKeys.length > 0) {
         for (const semStr of semKeys) {
+          const semNum = parseInt(semStr, 10);
           const semData = bySemesterResults[semStr];
           if (semData && semData.rawSchedules && Object.keys(semData.rawSchedules).length > 0) {
+            const semStartTime = allStartTimes[semNum] || (semNum === parseInt(config.semester) ? startTime : getDefaultStartTime(semNum));
             await api.post('/timetables/save-ml', {
-              semester: parseInt(semStr, 10),
+              semester: semNum,
               branch: config.branch || 'CSE',
-              rawSchedules: semData.rawSchedules
+              rawSchedules: semData.rawSchedules,
+              divisions: allDivisions[semNum] || divisions,
+              program: program || 'UG',
+              startTime: semStartTime
             });
           }
         }
       } else if (result.data.rawSchedules) {
         const targetSem = previewSemester || (cycle === 'odd' ? 1 : 2) || config.semester;
+        const semStartTime = allStartTimes[targetSem] || (targetSem === parseInt(config.semester) ? startTime : getDefaultStartTime(targetSem));
         await api.post('/timetables/save-ml', {
           semester: targetSem,
           branch: config.branch || 'CSE',
-          rawSchedules: result.data.rawSchedules
+          rawSchedules: result.data.rawSchedules,
+          divisions: allDivisions[targetSem] || divisions,
+          program: program || 'UG',
+          startTime: semStartTime
         });
       }
-      alert('Timetable(s) successfully saved to MongoDB database! You can now view and manage them in the Timetables section.');
+      setIsSavedToDb(true);
+      setShowPreview(true);
     } catch (error) {
       console.error('Failed to save timetables:', error);
       alert('Failed to save timetables: ' + (error.response?.data?.error || error.message));
@@ -774,7 +946,41 @@ const GenerateTimetable = () => {
   };
 
   return (
-    <div className="space-y-6 animate-fade-in">
+    <div className="space-y-6 animate-fade-in relative">
+      {/* View Timetable Popup */}
+      {showViewModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs z-50 flex items-center justify-center p-4 animate-fade-in">
+          <div className="bg-white rounded-3xl shadow-2xl border border-gray-100 max-w-md w-full p-8 text-center relative animate-scale-up">
+            <div className="w-20 h-20 bg-green-50 rounded-full flex items-center justify-center mx-auto mb-5 text-green-600 shadow-inner">
+              <FiCheckCircle size={44} />
+            </div>
+            <h2 className="text-2xl font-black text-gray-800 tracking-tight mb-2">
+              Timetable Generated!
+            </h2>
+            <p className="text-gray-500 text-sm mb-6 leading-relaxed">
+              Timetable generated successfully with 0 clashes. Click View to inspect the timetable before saving to database.
+            </p>
+            <div className="flex flex-col gap-3">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowViewModal(false);
+                  setShowPreview(true);
+                  setActiveTab('division');
+                  setTimeout(() => {
+                    const el = document.getElementById('engine-processing-results');
+                    if (el) el.scrollIntoView({ behavior: 'smooth' });
+                  }, 50);
+                }}
+                className="w-full py-3.5 px-6 bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-sm rounded-xl shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer"
+              >
+                <FiCheckCircle size={18} /> View Timetable
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Header */}
       <div className="flex items-center justify-between bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
         <div>
@@ -796,7 +1002,9 @@ const GenerateTimetable = () => {
             <><FiZap className="mr-2" /> {
               genMode === 'priority' 
                 ? `Generate Priority ${cycle === 'odd' ? '1st' : '2nd'} Semester`
-                : `Generate ${cycle === 'odd' ? '3rd, 5th & 7th' : '4th & 6th'} Semesters Together`
+                : (program === 'PG'
+                    ? `Generate ${cycle === 'odd' ? '3rd' : '4th'} Semester`
+                    : `Generate ${cycle === 'odd' ? '3rd, 5th & 7th' : '4th & 6th'} Semesters Together`)
             }</>
           )}
         </button>
@@ -811,36 +1019,88 @@ const GenerateTimetable = () => {
             </h3>
             <div className="space-y-5">
               {/* 1. Cycle Selector */}
-              <div className="bg-gradient-to-r from-indigo-50 to-purple-50 p-3.5 rounded-xl border border-indigo-100 space-y-2">
+              <div className="bg-gradient-to-r from-indigo-50 to-purple-50 p-3.5 rounded-xl border border-indigo-100 space-y-3">
                 <label className="block text-[11px] font-black text-indigo-900 uppercase tracking-wider">
                   1. Academic Cycle
                 </label>
-                <div className="grid grid-cols-2 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => handleCycleChange('odd')}
-                    className={`p-2.5 rounded-xl border text-xs font-bold transition-all flex flex-col items-center gap-0.5 ${
-                      cycle === 'odd'
-                        ? 'bg-indigo-600 text-white border-indigo-600 shadow-md scale-[1.02]'
-                        : 'bg-white text-gray-700 border-gray-200 hover:bg-gray-50'
-                    }`}
-                  >
-                    <span>Odd Semester</span>
-                    <span className="text-[9px] opacity-85">(1st, 3rd, 5th, 7th)</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleCycleChange('even')}
-                    className={`p-2.5 rounded-xl border text-xs font-bold transition-all flex flex-col items-center gap-0.5 ${
-                      cycle === 'even'
-                        ? 'bg-indigo-600 text-white border-indigo-600 shadow-md scale-[1.02]'
-                        : 'bg-white text-gray-700 border-gray-200 hover:bg-gray-50'
-                    }`}
-                  >
-                    <span>Even Semester</span>
-                    <span className="text-[9px] opacity-85">(2nd, 4th, 6th)</span>
-                  </button>
+
+                {/* Program Selector: UG and PG */}
+                <div className="space-y-1.5">
+                  <span className="text-[10px] font-extrabold text-indigo-950 uppercase tracking-wider block">
+                    Program Level
+                  </span>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => handleProgramChange('UG')}
+                      className={`p-2.5 rounded-xl border text-xs font-bold transition-all flex flex-col items-center gap-0.5 ${
+                        program === 'UG'
+                          ? 'bg-indigo-600 text-white border-indigo-600 shadow-md scale-[1.02]'
+                          : 'bg-white text-gray-700 border-gray-200 hover:bg-gray-50'
+                      }`}
+                    >
+                      <span className="font-extrabold text-sm">UG</span>
+                      <span className="text-[9px] opacity-85">(Undergraduate)</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleProgramChange('PG')}
+                      className={`p-2.5 rounded-xl border text-xs font-bold transition-all flex flex-col items-center gap-0.5 ${
+                        program === 'PG'
+                          ? 'bg-indigo-600 text-white border-indigo-600 shadow-md scale-[1.02]'
+                          : 'bg-white text-gray-700 border-gray-200 hover:bg-gray-50'
+                      }`}
+                    >
+                      <span className="font-extrabold text-sm">PG</span>
+                      <span className="text-[9px] opacity-85">(Postgraduate)</span>
+                    </button>
+                  </div>
                 </div>
+
+                {/* Odd/Even Selector - displayed only after UG or PG is selected */}
+                {program ? (
+                  <div className="space-y-1.5 pt-2 border-t border-indigo-100/70 animate-fade-in">
+                    <span className="text-[10px] font-extrabold text-indigo-950 uppercase tracking-wider block">
+                      Academic Semester Cycle
+                    </span>
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => handleCycleChange('odd')}
+                        className={`p-2.5 rounded-xl border text-xs font-bold transition-all flex flex-col items-center gap-0.5 ${
+                          cycle === 'odd'
+                            ? 'bg-indigo-600 text-white border-indigo-600 shadow-md scale-[1.02]'
+                            : 'bg-white text-gray-700 border-gray-200 hover:bg-gray-50'
+                        }`}
+                      >
+                        <span>Odd Semester</span>
+                        <span className="text-[9px] opacity-85">
+                          {program === 'PG' ? '(1st, 3rd)' : '(1st, 3rd, 5th, 7th)'}
+                        </span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleCycleChange('even')}
+                        className={`p-2.5 rounded-xl border text-xs font-bold transition-all flex flex-col items-center gap-0.5 ${
+                          cycle === 'even'
+                            ? 'bg-indigo-600 text-white border-indigo-600 shadow-md scale-[1.02]'
+                            : 'bg-white text-gray-700 border-gray-200 hover:bg-gray-50'
+                        }`}
+                      >
+                        <span>Even Semester</span>
+                        <span className="text-[9px] opacity-85">
+                          {program === 'PG' ? '(2nd, 4th)' : '(2nd, 4th, 6th)'}
+                        </span>
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="p-3 bg-white/70 rounded-xl border border-dashed border-indigo-200 text-center">
+                    <p className="text-[11px] text-indigo-700 font-semibold">
+                      Please select UG or PG above to choose an academic cycle.
+                    </p>
+                  </div>
+                )}
               </div>
 
               {/* 2. Generation Phase Selector */}
@@ -869,7 +1129,7 @@ const GenerateTimetable = () => {
                         : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-100'
                     }`}
                   >
-                    Grouped ({cycle === 'odd' ? '3rd, 5th, 7th' : '4th, 6th'})
+                    Grouped ({program === 'PG' ? (cycle === 'odd' ? '3rd Sem' : '4th Sem') : (cycle === 'odd' ? '3rd, 5th, 7th' : '4th, 6th')})
                   </button>
                 </div>
               </div>
@@ -880,11 +1140,11 @@ const GenerateTimetable = () => {
                   <label className="block text-[10px] font-extrabold text-indigo-900 uppercase flex justify-between items-center">
                     <span>Map Inputs Semester by Semester:</span>
                     <span className="text-[10px] text-indigo-600 font-bold">
-                      (Saved {(cycle === 'odd' ? [3, 5, 7] : [4, 6]).filter(s => savedSemesters[s]).length}/{(cycle === 'odd' ? [3, 5, 7] : [4, 6]).length})
+                      (Saved {getGroupedSemesters().filter(s => savedSemesters[s]).length}/{getGroupedSemesters().length})
                     </span>
                   </label>
                   <div className="flex gap-2">
-                    {(cycle === 'odd' ? [3, 5, 7] : [4, 6]).map(semNum => (
+                    {getGroupedSemesters().map(semNum => (
                       <button
                         key={semNum}
                         type="button"
@@ -966,41 +1226,108 @@ const GenerateTimetable = () => {
                   value={config.semester}
                   onChange={(e) => setConfig({...config, semester: parseInt(e.target.value)})}
                 >
-                  {(cycle === 'odd' ? [1, 3, 5, 7] : [2, 4, 6]).map(s => (
+                  {getAllSemestersForCycle().map(s => (
                     <option key={s} value={s}>Semester {s} {s === (cycle === 'odd' ? 1 : 2) ? '(Priority)' : '(Grouped)'}</option>
                   ))}
                 </select>
               </div>
 
-              <div className="pt-2 border-t border-gray-100">
-                <label className="block text-xs font-bold text-gray-600 mb-2">Number of Classes (Divisions)</label>
-                <input 
-                  type="number"
-                  min="1" max="10"
-                  value={numDivisions}
-                  onChange={handleNumDivisionsChange}
-                  className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl text-sm font-medium focus:ring-2 focus:ring-indigo-500 transition-all outline-none"
-                />
-              </div>
-
-              {divisions.length > 0 && (
-                <div className="space-y-3">
-                  <label className="block text-xs font-bold text-gray-600">Class Strengths</label>
-                  {divisions.map((div, idx) => (
-                    <div key={idx} className="flex items-center gap-3">
-                      <span className="text-xs font-bold w-12 text-gray-500">{div.name}</span>
-                      <input 
-                        type="number" 
-                        value={div.strength}
-                        onChange={(e) => handleStrengthChange(idx, e.target.value)}
-                        className="flex-1 p-2 bg-white border border-gray-200 rounded-lg text-xs outline-none focus:border-indigo-500"
-                        placeholder="Strength"
-                      />
-                    </div>
-                  ))}
+              <div className="pt-3 border-t border-gray-100 space-y-3">
+                <div className="flex items-center justify-between">
+                  <label className="text-[10px] font-extrabold text-indigo-950 uppercase tracking-wider">
+                    Automatic Division & Room Allocation
+                  </label>
+                  <span className="text-[10px] font-bold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full border border-indigo-100">
+                    {program || 'UG'}
+                  </span>
                 </div>
-              )}
+
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="block text-[10px] font-bold text-gray-500 mb-1">Total Student Strength</label>
+                    <input 
+                      type="number"
+                      min="1"
+                      value={totalStudentStrength}
+                      onChange={(e) => handleTotalStrengthChange(e.target.value)}
+                      className="w-full p-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs font-bold text-gray-800 outline-none focus:ring-2 focus:ring-indigo-500 transition-all"
+                      placeholder="e.g. 60"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold text-gray-500 mb-1">
+                      Available Classrooms ({rooms.filter(r => r.roomType === 'lecture' || !r.roomType).length})
+                    </label>
+                    <input 
+                      type="number"
+                      min="1"
+                      max={Math.max(1, rooms.filter(r => r.roomType === 'lecture' || !r.roomType).length)}
+                      value={allocatedClassroomsCount}
+                      onChange={(e) => handleClassroomsCountChange(e.target.value)}
+                      className="w-full p-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs font-bold text-gray-800 outline-none focus:ring-2 focus:ring-indigo-500 transition-all"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between pt-1">
+                  <span className="text-[10px] text-gray-500">
+                    Evenly distributes {totalStudentStrength} students across {divisions.length} division{divisions.length > 1 ? 's' : ''}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => autoAllocateDivisions(totalStudentStrength, allocatedClassroomsCount)}
+                    className="text-[10px] font-bold text-indigo-600 hover:text-indigo-800 underline cursor-pointer"
+                  >
+                    Auto-Calculate
+                  </button>
+                </div>
+
+                {divisions.length > 0 && (
+                  <div className="space-y-2 bg-indigo-50/40 p-3 rounded-xl border border-indigo-100">
+                    <div className="flex items-center justify-between text-[11px] font-bold text-indigo-900">
+                      <span>Allocated Divisions ({divisions.length})</span>
+                      <span className={`px-2 py-0.5 rounded-full text-[10px] font-black ${
+                        divisions.reduce((a, b) => a + (parseInt(b.strength) || 0), 0) === parseInt(totalStudentStrength)
+                          ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+                          : 'bg-amber-100 text-amber-800 border border-amber-200'
+                      }`}>
+                        Sum: {divisions.reduce((a, b) => a + (parseInt(b.strength) || 0), 0)} / {totalStudentStrength}
+                      </span>
+                    </div>
+
+                    <div className="space-y-1.5">
+                      {divisions.map((div, idx) => (
+                        <div key={idx} className="bg-white p-2.5 rounded-lg border border-indigo-100 flex items-center justify-between gap-2 shadow-2xs">
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs font-extrabold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded border border-indigo-200">
+                              {div.name}
+                            </span>
+                            <div className="flex items-center gap-1">
+                              <input 
+                                type="number" 
+                                value={div.strength}
+                                onChange={(e) => handleStrengthChange(idx, e.target.value)}
+                                className="w-14 p-1 bg-gray-50 border border-gray-200 rounded text-xs font-bold text-center outline-none focus:border-indigo-500"
+                              />
+                              <span className="text-[10px] text-gray-400 font-medium">students</span>
+                            </div>
+                          </div>
+                          <div className="text-[11px] text-gray-600 font-semibold flex items-center gap-1">
+                            <span>Room:</span>
+                            <span className="font-extrabold text-indigo-950 bg-gray-100 px-1.5 py-0.5 rounded border border-gray-200">
+                              {div.assignedRoom}
+                            </span>
+                            {div.roomCapacity && (
+                              <span className="text-[9px] text-gray-400">(Cap: {div.roomCapacity})</span>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
             </div>
+          </div>
           </div>
 
           {/* Subjects Summary */}
@@ -1022,14 +1349,16 @@ const GenerateTimetable = () => {
                 Subject Timings & Constraints
               </h3>
               <p className="text-xs text-gray-500 mt-1 leading-relaxed">
-                {(config.semester == 1 || config.semester == 2) && (
+                {isEntryModeSupported(config.semester, program) && (
                   entryMode === 'dynamic'
-                    ? "Dynamic Entry: Day & Time slots are active for Mathematics & Chemistry only (CSE). Configure other custom slots below if needed."
+                    ? (program === 'PG'
+                        ? "Dynamic Entry: Subjects are scheduled automatically by AI. Configure custom slots below if needed."
+                        : "Dynamic Entry: Day & Time slots are active for Mathematics & Chemistry only (CSE). Configure other custom slots below if needed.")
                     : "Static Entry: Set day & time slots beside each subject in the Map Faculty section, or configure custom slot timings below."
                 )}
-                {(config.semester == 5) && "Set timing for Program Elective (applied across all divisions)."}
-                {(config.semester == 6 || config.semester == 7) && "Set timings for Program Elective & Open Elective (applied across all divisions)."}
-                {!([1, 2, 5, 6, 7].includes(parseInt(config.semester))) && "Force specific subjects to be scheduled at an exact day and time."}
+                {program !== 'PG' && (config.semester == 5) && "Set timing for Program Elective (applied across all divisions)."}
+                {program !== 'PG' && (config.semester == 6 || config.semester == 7) && "Set timings for Program Elective & Open Elective (applied across all divisions)."}
+                {(!isEntryModeSupported(config.semester, program) && ![5, 6, 7].includes(parseInt(config.semester))) && "Force specific subjects to be scheduled at an exact day and time."}
               </p>
             </div>
 
@@ -1336,50 +1665,55 @@ const GenerateTimetable = () => {
               </p>
             </div>
           ) : result ? (
-             <div className="space-y-6 animate-slide-up">
-              <div className="bg-green-50 border border-green-200 p-6 rounded-2xl flex items-center justify-between">
+             <div id="engine-processing-results" className="space-y-6 animate-slide-up">
+              <div className="bg-green-50 border border-green-200 p-6 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div>
                   <h3 className="text-xl font-bold text-green-800 flex items-center">
                     <FiCheckCircle className="mr-2" /> Timetable Generated Successfully
                   </h3>
-                  <p className="text-sm text-green-600 mt-1">100% constraints satisfied. No clashes detected.</p>
+                  <p className="text-sm text-green-600 mt-1">
+                    {isSavedToDb 
+                      ? '✓ 100% constraints satisfied. Saved to MongoDB database.' 
+                      : '100% constraints satisfied. Displaying in-memory preview. Click "Save to Database" when ready.'}
+                  </p>
                 </div>
-                <div className="flex gap-3">
+                <div className="flex flex-wrap items-center gap-3">
                   <button 
                     onClick={handleSaveTimetables} 
-                    disabled={savingToDb}
-                    className={`bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-bold text-sm shadow-md transition-colors flex items-center gap-2 ${
+                    disabled={savingToDb || isSavedToDb}
+                    className={`${
+                      isSavedToDb 
+                        ? 'bg-green-700 text-white cursor-default' 
+                        : 'bg-blue-600 hover:bg-blue-700 text-white shadow-md'
+                    } px-4 py-2 rounded-lg font-bold text-sm transition-colors flex items-center gap-2 ${
                       savingToDb ? 'opacity-70 cursor-not-allowed' : ''
                     }`}
                   >
-                    <FiCheckCircle /> {savingToDb ? 'Saving to Database...' : 'Save to Database'}
+                    <FiCheckCircle /> {savingToDb ? 'Saving to Database...' : isSavedToDb ? 'Saved to Database' : 'Save to Database'}
                   </button>
-                  <button onClick={handleExportPDF} className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg font-bold text-sm shadow-md transition-colors flex items-center gap-2">
+                  <button 
+                    onClick={handleExportPDF} 
+                    className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg font-bold text-sm shadow-md transition-colors flex items-center gap-2"
+                  >
                     <FiDownload /> Export PDF
                   </button>
-                  <button onClick={() => setShowPreview(false)} className="bg-white border border-gray-300 text-gray-700 hover:bg-gray-50 px-4 py-2 rounded-lg font-bold text-sm transition-colors">
-                    Hide Preview
+                  <button 
+                    onClick={() => setShowPreview(!showPreview)} 
+                    className="bg-white border border-gray-300 text-gray-700 hover:bg-gray-50 px-4 py-2 rounded-lg font-bold text-sm transition-colors"
+                  >
+                    {showPreview ? 'Hide Preview' : 'Show Preview'}
                   </button>
                 </div>
               </div>
 
-              {/* View Selection Tab Toggler */}
-              <div className="flex bg-gray-100 p-1.5 rounded-xl gap-2 border border-gray-200">
+              {/* View Selection: Division View Only */}
+              <div className="flex bg-gray-100 p-1.5 rounded-xl border border-gray-200">
                 <button 
+                  type="button"
                   onClick={() => setActiveTab('division')}
-                  className={`flex-1 py-2 text-xs font-bold rounded-lg transition-all ${
-                    activeTab === 'division' ? 'bg-white shadow-sm text-indigo-700' : 'text-gray-500 hover:text-gray-700'
-                  }`}
+                  className="w-full py-2 text-xs font-extrabold rounded-lg bg-white shadow-xs text-indigo-700 cursor-default"
                 >
                   Division View
-                </button>
-                <button 
-                  onClick={() => setActiveTab('faculty')}
-                  className={`flex-1 py-2 text-xs font-bold rounded-lg transition-all ${
-                    activeTab === 'faculty' ? 'bg-white shadow-sm text-indigo-700' : 'text-gray-500 hover:text-gray-700'
-                  }`}
-                >
-                  Faculty View
                 </button>
               </div>
 
@@ -1389,7 +1723,7 @@ const GenerateTimetable = () => {
                   <div className="flex items-center gap-2">
                     <span className="text-xs font-black text-indigo-900 uppercase tracking-wider">Select Semester Timetable:</span>
                     <div className="flex gap-2">
-                      {(cycle === 'odd' ? [3, 5, 7] : [4, 6]).map(semNum => (
+                      {getGroupedSemesters().map(semNum => (
                         <button
                           key={semNum}
                           type="button"
@@ -1420,25 +1754,78 @@ const GenerateTimetable = () => {
 
                 if (!currentMatrix) return null;
 
-                return Object.keys(currentMatrix).map(divId => {
+                return (
+                  <div id="timetable-preview-container" className="space-y-8">
+                    {Object.keys(currentMatrix).map(divId => {
                   const division = currentMatrix[divId];
                   const days = Object.keys(division.days);
+                  const semDivs = allDivisions[previewSemester] || divisions;
+                  const divInfo = semDivs.find(d => d.name === division.divisionName || d.name === divId) || division;
+                  const displayStrength = divInfo.strength || division.strength || (program === 'PG' ? 30 : 60);
+                  const displayRoom = divInfo.assignedRoom || division.assignedRoom || 'Room Assigned';
+                  const roomCap = divInfo.roomCapacity || division.roomCapacity;
 
                   return (
-                    <div key={divId} id="timetable-preview" className="bg-white p-6 rounded-2xl shadow-sm border border-gray-200 overflow-x-auto">
-                      <div className="mb-4 text-center">
-                        <h2 className="text-2xl font-black text-gray-800">Class Timetable - {config.branch} Sem {previewSemester}</h2>
-                        <p className="text-gray-500 font-medium">Division: {division.divisionName}</p>
+                    <div key={divId} id="timetable-preview" className="bg-white p-6 rounded-2xl shadow-sm border border-gray-200 overflow-x-auto mb-8 last:mb-0">
+                      {/* Timetable Header with Division & Student Count in the Left Corner */}
+                      <div className="mb-5 flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-gray-200/90 pb-4">
+                        {/* LEFT CORNER: Division Name, Student Count & Allocated Room */}
+                        <div className="flex items-center gap-3">
+                          <div className="bg-gradient-to-br from-indigo-700 via-indigo-800 to-indigo-950 text-white px-4 py-2.5 rounded-xl shadow-xs text-center min-w-[100px] border border-indigo-900">
+                            <span className="text-[10px] uppercase font-bold tracking-wider text-indigo-200 block">Division</span>
+                            <span className="text-2xl font-black">{division.divisionName || divId}</span>
+                          </div>
+                          <div className="flex flex-col gap-1.5">
+                            <div className="flex items-center gap-2">
+                              <span className="bg-indigo-50 text-indigo-800 text-xs font-black px-3 py-1 rounded-full border border-indigo-200 shadow-2xs">
+                                👥 {displayStrength} Students
+                              </span>
+                              <span className="bg-purple-50 text-purple-800 text-xs font-bold px-2.5 py-1 rounded-full border border-purple-200">
+                                {program || 'UG'}
+                              </span>
+                            </div>
+                            <div className="text-xs text-gray-700 font-semibold flex items-center gap-1.5 flex-wrap">
+                              <span className="text-gray-500">Allocated Room:</span>
+                              <span className="font-extrabold text-indigo-950 bg-gray-100 px-2.5 py-0.5 rounded-md border border-gray-300">
+                                🏢 {displayRoom}
+                              </span>
+                              {roomCap && (
+                                <span className="text-[11px] text-gray-500 font-medium">(Capacity: {roomCap})</span>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Center / Right: College Title & Academic Semester */}
+                        <div className="text-left md:text-right">
+                          <h2 className="text-xl font-black text-gray-800 tracking-tight">Class Timetable - {config.branch} Sem {previewSemester}</h2>
+                          <p className="text-xs text-gray-500 font-medium mt-0.5">Department of Computer Science & Engineering • Academic Year 2024-25</p>
+                        </div>
                       </div>
+
                       {(() => {
                         const divHas1230 = Object.values(division.days || {}).some(dayObj => dayObj && dayObj["12:30"] && dayObj["12:30"].type !== "busy");
+                        const divHas0800 = Object.values(division.days || {}).some(dayObj => dayObj && dayObj["08:00"] && dayObj["08:00"].type !== "busy");
+                        const effectiveDivStartTime = division.collegeStartTime || allStartTimes[previewSemester] || (previewSemester === parseInt(config.semester) ? startTime : getDefaultStartTime(previewSemester));
+                        const is8amStart = effectiveDivStartTime === '08:00' || divHas0800;
+
                         return (
                           <>
                             <table className="w-full text-left border-collapse min-w-[800px] text-xs">
                               <thead>
                                 <tr>
-                                  <th className="border border-gray-400 p-2 bg-gray-50 font-bold text-gray-700 text-center w-16">Days</th>
-                                  <th className="border border-gray-400 p-2 bg-white font-bold text-center"><div className="flex flex-col"><span>8:00 to</span><span>9:00 AM</span></div></th>
+                                  <th className="border border-gray-400 p-2 bg-indigo-50/80 font-bold text-gray-700 text-center w-28">
+                                    <div className="flex flex-col items-center">
+                                      <span className="text-xs font-black text-indigo-900">{division.divisionName || divId}</span>
+                                      <span className="text-[10px] font-bold text-indigo-600 bg-white px-1.5 py-0.5 rounded border border-indigo-200 shadow-2xs my-0.5">
+                                        {displayStrength} Students
+                                      </span>
+                                      <span className="text-[9px] font-extrabold text-gray-500 uppercase">Day \ Time</span>
+                                    </div>
+                                  </th>
+                                  {is8amStart && (
+                                    <th className="border border-gray-400 p-2 bg-white font-bold text-center"><div className="flex flex-col"><span>8:00 to</span><span>9:00 AM</span></div></th>
+                                  )}
                                   <th className="border border-gray-400 p-2 bg-white font-bold text-center"><div className="flex flex-col"><span>9:00 to</span><span>10:00 AM</span></div></th>
                                   <th className="border border-gray-400 p-2 bg-white font-bold text-center"><div className="flex flex-col"><span>10:00 AM</span><span>10:30 AM</span></div></th>
                                   <th className="border border-gray-400 p-2 bg-white font-bold text-center"><div className="flex flex-col"><span>10:30 to</span><span>11:30 AM</span></div></th>
@@ -1458,7 +1845,7 @@ const GenerateTimetable = () => {
                               <tbody>
                                 {['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'].map((day, dayIndex) => {
                                   const daySlots = [
-                                    { time: '08:00', type: 'class' },
+                                    ...(is8amStart ? [{ time: '08:00', type: 'class' }] : []),
                                     { time: '09:00', type: 'class' },
                                     { type: 'break', label: 'T E A   B R E A K' },
                                     { time: '10:30', type: 'class' },
@@ -1580,8 +1967,10 @@ const GenerateTimetable = () => {
                   })()}
                 </div>
               );
-            });
-          })()}
+            })}
+          </div>
+        );
+      })()}
 
               {/* Faculty-wise Timetables */}
               {activeTab === 'faculty' && (
@@ -1707,11 +2096,61 @@ const GenerateTimetable = () => {
              </div>
           ) : (
             <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-              <div className="p-6 border-b border-gray-100 bg-gray-50/50">
-                <h3 className="text-lg font-bold text-gray-800 flex items-center">
-                  <FiUsers className="mr-2 text-indigo-500" /> Map Faculty to Subjects
-                </h3>
-                <p className="text-xs text-gray-500 mt-1">Assign faculty for each division independently.</p>
+              <div className="p-6 border-b border-gray-100 bg-gray-50/50 flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div>
+                  <h3 className="text-lg font-bold text-gray-800 flex items-center">
+                    <FiUsers className="mr-2 text-indigo-500" /> Map Faculty to Subjects
+                  </h3>
+                  <p className="text-xs text-gray-500 mt-1">Assign faculty for each division independently.</p>
+                </div>
+
+                {/* Class Start-Time Selection */}
+                <div className="flex flex-col sm:flex-row sm:items-center gap-2.5 bg-white px-3.5 py-2 rounded-xl border border-gray-200 shadow-2xs self-start md:self-auto">
+                  <div className="flex items-center gap-1.5 text-xs font-extrabold text-gray-700">
+                    <FiClock className="text-indigo-600" />
+                    <span>Class Start Time:</span>
+                  </div>
+                  <div className="flex items-center gap-1.5 bg-gray-100 p-1 rounded-lg border border-gray-200">
+                    <button
+                      type="button"
+                      id="start-time-8am-btn"
+                      onClick={() => handleStartTimeChange('08:00')}
+                      className={`py-1.5 px-3 rounded-md text-xs font-extrabold transition-all flex items-center gap-1.5 ${
+                        startTime === '08:00'
+                          ? 'bg-indigo-600 text-white shadow-xs'
+                          : 'text-gray-600 hover:text-gray-900 hover:bg-gray-200/60'
+                      }`}
+                    >
+                      8:00 AM
+                      {getDefaultStartTime(config.semester) === '08:00' && (
+                        <span className={`text-[9px] px-1.5 py-0.2 rounded-full font-bold ${
+                          startTime === '08:00' ? 'bg-indigo-700 text-indigo-100' : 'bg-gray-200 text-gray-600'
+                        }`}>
+                          Default
+                        </span>
+                      )}
+                    </button>
+                    <button
+                      type="button"
+                      id="start-time-9am-btn"
+                      onClick={() => handleStartTimeChange('09:00')}
+                      className={`py-1.5 px-3 rounded-md text-xs font-extrabold transition-all flex items-center gap-1.5 ${
+                        startTime === '09:00'
+                          ? 'bg-indigo-600 text-white shadow-xs'
+                          : 'text-gray-600 hover:text-gray-900 hover:bg-gray-200/60'
+                      }`}
+                    >
+                      9:00 AM
+                      {getDefaultStartTime(config.semester) === '09:00' && (
+                        <span className={`text-[9px] px-1.5 py-0.2 rounded-full font-bold ${
+                          startTime === '09:00' ? 'bg-indigo-700 text-indigo-100' : 'bg-gray-200 text-gray-600'
+                        }`}>
+                          Default
+                        </span>
+                      )}
+                    </button>
+                  </div>
+                </div>
               </div>
 
               {subjects.length === 0 ? (
@@ -1720,8 +2159,8 @@ const GenerateTimetable = () => {
                 </div>
               ) : (
                 <div className="p-6">
-                  {/* Timetable Entry Mode Toggle (Semester 1 & 2 only) */}
-                  {(parseInt(config.semester) === 1 || parseInt(config.semester) === 2) && (
+                  {/* Timetable Entry Mode Toggle (Supported for UG Sem 1 & 2; PG Sem 1, 2, 3, 4) */}
+                  {isEntryModeSupported(config.semester, program) && (
                     <div className="mb-6 bg-gradient-to-r from-indigo-50/80 via-white to-purple-50/60 p-4 rounded-2xl border border-indigo-100 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
                       <div>
                         <div className="flex items-center gap-2">
@@ -1732,7 +2171,9 @@ const GenerateTimetable = () => {
                         </div>
                         <p className="text-[11px] text-gray-600 mt-1">
                           {entryMode === 'dynamic' 
-                            ? 'Dynamic Entry: Day and Time dropdowns enabled for Mathematics and Chemistry for CSE only. Other subjects are scheduled automatically.' 
+                            ? (program === 'PG'
+                                ? 'Dynamic Entry: Subjects and labs are scheduled automatically by AI. Switch to Static Entry to pin custom day and time slots.'
+                                : 'Dynamic Entry: Day and Time dropdowns enabled for Mathematics and Chemistry for CSE only. Other subjects are scheduled automatically.')
                             : 'Static Entry: Day and Time dropdowns enabled for every subject for strict manual schedule entry.'}
                         </p>
                       </div>
@@ -1740,7 +2181,7 @@ const GenerateTimetable = () => {
                       <div className="grid grid-cols-2 gap-2 bg-gray-100 p-1 rounded-xl border border-gray-200 shrink-0 self-start md:self-auto">
                         <button
                           type="button"
-                          onClick={() => setEntryMode('dynamic')}
+                          onClick={() => handleEntryModeChange('dynamic')}
                           className={`py-2 px-3.5 rounded-lg text-xs font-extrabold transition-all flex items-center justify-center gap-1.5 ${
                             entryMode === 'dynamic'
                               ? 'bg-white text-indigo-700 shadow-sm border border-indigo-100'
@@ -1751,7 +2192,7 @@ const GenerateTimetable = () => {
                         </button>
                         <button
                           type="button"
-                          onClick={() => setEntryMode('static')}
+                          onClick={() => handleEntryModeChange('static')}
                           className={`py-2 px-3.5 rounded-lg text-xs font-extrabold transition-all flex items-center justify-center gap-1.5 ${
                             entryMode === 'static'
                               ? 'bg-white text-indigo-700 shadow-sm border border-indigo-100'
@@ -1847,9 +2288,9 @@ const GenerateTimetable = () => {
                                 </div>
                               </div>
 
-                              {/* Day + Time Dropdowns for Semester 1 & 2 */}
-                              {(parseInt(config.semester) === 1 || parseInt(config.semester) === 2) && 
-                               (entryMode === 'static' || isMathematicsOrChemistryForCSE(sub)) && (() => {
+                              {/* Day + Time Dropdowns for Supported Semesters */}
+                              {isEntryModeSupported(config.semester, program) && 
+                               (entryMode === 'static' || (program !== 'PG' && isMathematicsOrChemistryForCSE(sub))) && (() => {
                                 const slotCount = Math.max(1, sub.credits || ((sub.lectureHours || 0) + (sub.tutorialHours || 0)) || 1);
                                 return (
                                   <div className="mt-4 pt-3 border-t border-gray-200/80 bg-white/60 -mx-5 -mb-5 p-4 rounded-b-xl">
@@ -1887,7 +2328,12 @@ const GenerateTimetable = () => {
                                             >
                                               <option value="">Time</option>
                                               <option value="N/A">N/A</option>
-                                              {["08:00", "09:00", "10:30", "11:30", "12:30", "14:30", "15:30"].map(t => (
+                                              {Array.from(new Set([
+                                                ...(startTime === '08:00'
+                                                  ? ["08:00", "09:00", "10:30", "11:30", "14:30", "15:30"]
+                                                  : ["09:00", "10:30", "11:30", "12:30", "14:30", "15:30"]),
+                                                ...(fixedTimings[div.name]?.[sub._id]?.[i]?.time ? [fixedTimings[div.name][sub._id][i].time] : [])
+                                              ])).sort().map(t => (
                                                 <option key={t} value={t}>{t}</option>
                                               ))}
                                             </select>

@@ -20,6 +20,13 @@ const Navbar = ({ toggleSidebar }) => {
     }
   };
 
+  const getDashboardPath = () => {
+    if (user?.role === 'admin') return '/admin/dashboard';
+    if (user?.role === 'teacher') return '/teacher/dashboard';
+    if (user?.role === 'student') return '/student/dashboard';
+    return '/dashboard';
+  };
+
   // If user is logged in, show the Dashboard Navbar
   if (user) {
     return (
@@ -29,7 +36,7 @@ const Navbar = ({ toggleSidebar }) => {
             <FiMenu size={24} />
           </button>
           <div className="hidden lg:flex items-center ml-4 space-x-1 text-sm font-medium text-gray-500">
-            <Link to="/dashboard" className="hover:text-indigo-600 px-3 py-2 rounded-md transition-colors">Dashboard</Link>
+            <Link to={getDashboardPath()} className="hover:text-indigo-600 px-3 py-2 rounded-md transition-colors">Dashboard</Link>
             <span className="text-gray-300">/</span>
             <span className="text-gray-900 px-3 py-2">Overview</span>
           </div>

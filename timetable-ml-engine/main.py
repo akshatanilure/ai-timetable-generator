@@ -21,6 +21,8 @@ class GenerationRequest(BaseModel):
     branch: str = "CSE"
     labsConfig: List[Dict[str, Any]] = [{"id": 1, "name": "Lab 1", "capacity": 30}, {"id": 2, "name": "Lab 2", "capacity": 30}]
     timetableRules: Optional[Dict[str, Any]] = None
+    program: Optional[str] = "UG"
+    startTime: Optional[str] = None
 
 DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
 SLOTS = ["08:00", "09:00", "10:30", "11:30", "12:30", "14:30", "15:30"]
@@ -44,10 +46,15 @@ LAB_END_TIMES = {
     5: "16:30"
 }
 
-def get_semester_timing_config(semester: int = 1):
+def get_semester_timing_config(semester: int = 1, start_time: Optional[str] = None):
+    # Default based on semester:
     # Odd: 1st & 5th sem -> 8:00 AM; 3rd & 7th sem -> 9:00 AM
     # Even: 2nd sem -> 8:00 AM; 4th & 6th sem -> 9:00 AM (8th sem -> 9:00 AM)
-    is_8am_start = int(semester) in [1, 2, 5]
+    if start_time is not None and str(start_time).strip() != "":
+        is_8am_start = ("8" in str(start_time))
+    else:
+        is_8am_start = int(semester) in [1, 2, 5]
+
     if is_8am_start:
         global_start_idx = 0
         allowed_theory_indices = [0, 1, 2, 3, 5, 6]
@@ -65,13 +72,38 @@ def is_audit_extra_subject(sub):
     code = str(sub.get('subjectCode') or '').upper()
     return any(k in name for k in ['uhv', 'human', 'universal', 'environment', 'evs', 'constitution', 'audit', 'value', 'kannada', 'cip']) or any(k in code for k in ['UHV', 'AECC', 'HS', 'EVS', 'CIP', 'KAN'])
 
-def create_individual(sessions, teachers, faculty_mapping, rooms, fixed_timings, global_start_idx=0, semester=1, entry_mode="dynamic"):
+def get_subject_category(sub):
+    cat = sub.get('subjectCategory')
+    if cat and str(cat).strip():
+        return str(cat).strip()
+    if sub.get('elective'):
+        return 'Elective 1'
+    return 'Compulsory Subject'
+
+def create_individual(sessions, teachers, faculty_mapping, rooms, fixed_timings, global_start_idx=0, semester=1, entry_mode="dynamic", divisions_info=None, start_time=None):
     timetable = []
     
     div_names = list(set(s.get('division', 'DIV-A') for s in sessions))
     divisions = [{'name': d} for d in div_names]
-    global_start_idx, allowed_theory_indices, valid_lab_start_indices, saturday_valid_indices = get_semester_timing_config(semester)
+    global_start_idx, allowed_theory_indices, valid_lab_start_indices, saturday_valid_indices = get_semester_timing_config(semester, start_time)
     div_start_indices = {d: global_start_idx for d in div_names}
+
+    # Map each division to an appropriate classroom
+    div_info_list = divisions_info or divisions
+    div_room_map = {}
+    for idx, d in enumerate(div_info_list):
+        d_name = d.get('name', f'DIV-{idx}')
+        assigned = d.get('assignedRoom') or d.get('rawRoomNumber')
+        room_id = d.get('roomId')
+        matched = None
+        if room_id:
+            matched = next((r for r in rooms if str(r.get('_id')) == str(room_id)), None)
+        if not matched and assigned:
+            clean = str(assigned).replace('Room', '').strip().lower()
+            matched = next((r for r in rooms if str(r.get('roomNumber', '')).strip().lower() == clean), None)
+        if not matched and rooms:
+            matched = rooms[idx % len(rooms)]
+        div_room_map[d_name] = matched
     
     full_days_per_div = {}
     for div in div_names:
@@ -105,6 +137,7 @@ def create_individual(sessions, teachers, faculty_mapping, rooms, fixed_timings,
 
     theories = [s for s in sessions if s['type'] == 'theory']
     labs = [s for s in sessions if s['type'] == 'lab_group']
+    electives = [s for s in sessions if s['type'] == 'elective_group']
     
     # Place Labs
     for session in labs:
@@ -225,6 +258,100 @@ def create_individual(sessions, teachers, faculty_mapping, rooms, fixed_timings,
                             placed = True
                             break
 
+    def assign_elective_teachers_and_rooms(session, div_name):
+        group_teachers = []
+        group_rooms = []
+        used_t_ids = set()
+        used_r_ids = set()
+        div_rm = div_room_map.get(div_name)
+
+        def get_t_id(t):
+            return str(t.get('_id') or t.get('id') or '')
+
+        for idx, sub in enumerate(session.get('subjects', [])):
+            sub_id = str(sub.get('_id'))
+            fac_map = faculty_mapping.get(div_name, {}).get(sub_id, faculty_mapping.get(sub_id, {}))
+            th_fac = fac_map.get('theory', '') if isinstance(fac_map, dict) else (fac_map if isinstance(fac_map, str) else '')
+            
+            t_obj = next((t for t in teachers if get_t_id(t) == str(th_fac) and get_t_id(t) not in used_t_ids), None)
+            if not t_obj:
+                avail_t = [t for t in teachers if get_t_id(t) and get_t_id(t) not in used_t_ids]
+                t_obj = random.choice(avail_t) if avail_t else (random.choice(teachers) if teachers else {"_id": f"t_{sub_id}", "name": "Faculty"})
+            used_t_ids.add(get_t_id(t_obj))
+            group_teachers.append(t_obj)
+
+            if idx == 0 and div_rm and str(div_rm.get('_id')) not in used_r_ids:
+                r_obj = div_rm
+            else:
+                avail_r = [r for r in rooms if str(r.get('_id')) not in used_r_ids]
+                r_obj = random.choice(avail_r) if avail_r else (random.choice(rooms) if rooms else {"_id": "r_default", "roomNumber": "101"})
+            used_r_ids.add(str(r_obj.get('_id')))
+            group_rooms.append(r_obj)
+
+        return group_teachers, group_rooms
+
+    non_fixed_electives = []
+    for session in electives:
+        div_name = session.get('division', 'DIV-A')
+        placed = False
+        div_fixed_timings = fixed_timings.get(div_name, {})
+        
+        valid_fixed = []
+        for sub in session.get('subjects', []):
+            sub_id = str(sub.get('_id'))
+            for t in div_fixed_timings.get(sub_id, []):
+                if t.get('day') in DAYS and t.get('time') in SLOTS:
+                    valid_fixed.append((sub_id, t))
+
+        for sub_id, f_slot in valid_fixed:
+            if used_fixed[div_name].get(sub_id, 0) < len(div_fixed_timings.get(sub_id, [])):
+                f_day = f_slot.get('day', '')
+                f_time = f_slot.get('time', '')
+                f_idx = SLOTS.index(f_time)
+                if (f_day, f_idx) not in occupied[div_name]:
+                    if f_day != 'Saturday' or f_idx in saturday_valid_indices:
+                        occupied[div_name].add((f_day, f_idx))
+                        used_fixed[div_name][sub_id] = used_fixed[div_name].get(sub_id, 0) + 1
+                        g_teachers, g_rooms = assign_elective_teachers_and_rooms(session, div_name)
+                        timetable.append({
+                            "session": session,
+                            "day": f_day,
+                            "slot_idx": f_idx,
+                            "teacher": g_teachers,
+                            "room": g_rooms,
+                            "fixed": True
+                        })
+                        placed = True
+                        break
+        if not placed:
+            non_fixed_electives.append(session)
+
+    for session in non_fixed_electives:
+        div_name = session.get('division', 'DIV-A')
+        available_slots = []
+        for slot_idx in allowed_theory_indices:
+            if slot_idx >= len(SLOTS): continue
+            for day in DAYS:
+                if day == 'Saturday' and slot_idx not in saturday_valid_indices:
+                    continue
+                if day != 'Saturday' and slot_idx > 5 and day not in full_days_per_div[div_name]:
+                    continue
+                available_slots.append((day, slot_idx))
+        random.shuffle(available_slots)
+
+        for (day, slot_idx) in available_slots:
+            if (day, slot_idx) not in occupied[div_name] and (day, slot_idx) not in reserved_fixed[div_name]:
+                occupied[div_name].add((day, slot_idx))
+                g_teachers, g_rooms = assign_elective_teachers_and_rooms(session, div_name)
+                timetable.append({
+                    "session": session,
+                    "day": day,
+                    "slot_idx": slot_idx,
+                    "teacher": g_teachers,
+                    "room": g_rooms
+                })
+                break
+
     non_fixed_theories = []
     for session in theories:
         div_name = session.get('division', 'DIV-A')
@@ -270,8 +397,8 @@ def create_individual(sessions, teachers, faculty_mapping, rooms, fixed_timings,
                     if len(facs) == 0: facs = [random.choice(teachers)]
                     
                     sess_copy = dict(session)
-                    sess_copy['duration'] = duration
-                    timetable.append({"session": sess_copy, "day": f_day, "slot_idx": f_idx, "teacher": facs[0], "room": random.choice(rooms), "fixed": True})
+                    th_room = div_room_map.get(div_name) or (random.choice(rooms) if rooms else {"_id": "r_default", "roomNumber": "101"})
+                    timetable.append({"session": sess_copy, "day": f_day, "slot_idx": f_idx, "teacher": facs[0], "room": th_room, "fixed": True})
                     placed = True
             
             if placed:
@@ -297,7 +424,8 @@ def create_individual(sessions, teachers, faculty_mapping, rooms, fixed_timings,
                     if len(facs) == 0: facs = [random.choice(teachers)]
                     sess_copy = dict(session)
                     sess_copy['duration'] = 2
-                    timetable.append({"session": sess_copy, "day": day, "slot_idx": slot_idx, "teacher": facs[0], "room": random.choice(rooms), "fixed": True})
+                    th_room = div_room_map.get(div_name) or (random.choice(rooms) if rooms else {"_id": "r_default", "roomNumber": "101"})
+                    timetable.append({"session": sess_copy, "day": day, "slot_idx": slot_idx, "teacher": facs[0], "room": th_room, "fixed": True})
                     placed = True
                     break
             if placed:
@@ -341,7 +469,8 @@ def create_individual(sessions, teachers, faculty_mapping, rooms, fixed_timings,
                 th_fac = fac_map.get('theory', '')
                 facs = [t for t in teachers if str(t.get('_id')) == th_fac]
                 if len(facs) == 0: facs = [random.choice(teachers)]
-                timetable.append({"session": session, "day": day, "slot_idx": slot_idx, "teacher": facs[0], "room": random.choice(rooms)})
+                th_room = div_room_map.get(div_name) or (random.choice(rooms) if rooms else {"_id": "r_default", "roomNumber": "101"})
+                timetable.append({"session": session, "day": day, "slot_idx": slot_idx, "teacher": facs[0], "room": th_room})
                 break
                 
     timetable.sort(key=lambda x: x['session']['id'])
@@ -350,8 +479,8 @@ def create_individual(sessions, teachers, faculty_mapping, rooms, fixed_timings,
 def copy_individual(individual):
     return [dict(entry) for entry in individual]
 
-def pack_individual(individual, global_start_idx=0, semester=1):
-    global_start_idx, allowed_theory_indices, valid_lab_start_indices, saturday_valid_indices = get_semester_timing_config(semester)
+def pack_individual(individual, global_start_idx=0, semester=1, start_time=None):
+    global_start_idx, allowed_theory_indices, valid_lab_start_indices, saturday_valid_indices = get_semester_timing_config(semester, start_time)
     by_div_day = {}
     for entry in individual:
         div = entry['session'].get('division', 'DIV-A')
@@ -410,9 +539,9 @@ def pack_individual(individual, global_start_idx=0, semester=1):
             
     return individual
 
-def calculate_fitness(individual, teachers, faculty_max_workloads, global_start_idx=0, semester=1):
-    global_start_idx, allowed_theory_indices, valid_lab_start_indices, saturday_valid_indices = get_semester_timing_config(semester)
-    pack_individual(individual, global_start_idx, semester)
+def calculate_fitness(individual, teachers, faculty_max_workloads, global_start_idx=0, semester=1, start_time=None):
+    global_start_idx, allowed_theory_indices, valid_lab_start_indices, saturday_valid_indices = get_semester_timing_config(semester, start_time)
+    pack_individual(individual, global_start_idx, semester, start_time)
     conflicts = 0
     faculty_time = {}
     room_time = {}
@@ -544,12 +673,12 @@ def crossover(parent1, parent2):
     split = len(parent1) // 2
     return [dict(e) for e in parent1[:split]] + [dict(e) for e in parent2[split:]]
 
-def mutate(individual, teachers, rooms, global_start_idx=0, mutation_rate=0.1, semester=1):
+def mutate(individual, teachers, rooms, global_start_idx=0, mutation_rate=0.1, semester=1, div_room_map=None, start_time=None):
     if random.random() > mutation_rate: return individual
     idx1 = random.randrange(len(individual))
     if individual[idx1].get('fixed'): return individual
     
-    global_start_idx, allowed_theory_indices, valid_lab_start_indices, saturday_valid_indices = get_semester_timing_config(semester)
+    global_start_idx, allowed_theory_indices, valid_lab_start_indices, saturday_valid_indices = get_semester_timing_config(semester, start_time)
     
     div_name = individual[idx1]['session'].get('division', 'DIV-A')
     available_slots = [(d, s) for d in DAYS for s in allowed_theory_indices if not (d == 'Saturday' and s not in saturday_valid_indices)]
@@ -559,20 +688,41 @@ def mutate(individual, teachers, rooms, global_start_idx=0, mutation_rate=0.1, s
     if available_slots:
         new_slot = random.choice(available_slots)
         individual[idx1]['day'], individual[idx1]['slot_idx'] = new_slot[0], new_slot[1]
-        if individual[idx1]['session']['type'] != 'lab_group' and rooms:
-            individual[idx1]['room'] = random.choice(rooms)
+        if individual[idx1]['session']['type'] != 'lab_group' and individual[idx1]['session']['type'] != 'elective_group':
+            if div_room_map and div_room_map.get(div_name):
+                individual[idx1]['room'] = div_room_map.get(div_name)
+            elif rooms:
+                individual[idx1]['room'] = random.choice(rooms)
             
     return individual
 
-def run_genetic_algorithm(sessions, teachers, faculty_mapping, rooms, fixed_timings, faculty_max_workloads, global_start_idx=0, semester=1, entry_mode="dynamic"):
+def run_genetic_algorithm(sessions, teachers, faculty_mapping, rooms, fixed_timings, faculty_max_workloads, global_start_idx=0, semester=1, entry_mode="dynamic", divisions_info=None, start_time=None):
     POPULATION_SIZE = 100 
     GENERATIONS = 300
-    population = [create_individual(sessions, teachers, faculty_mapping, rooms, fixed_timings, global_start_idx, semester, entry_mode) for _ in range(POPULATION_SIZE)]
+
+    div_names = list(set(s.get('division', 'DIV-A') for s in sessions))
+    div_info_list = divisions_info or [{'name': d} for d in div_names]
+    div_room_map = {}
+    for idx, d in enumerate(div_info_list):
+        d_name = d.get('name', f'DIV-{idx}')
+        assigned = d.get('assignedRoom') or d.get('rawRoomNumber')
+        room_id = d.get('roomId')
+        matched = None
+        if room_id:
+            matched = next((r for r in rooms if str(r.get('_id')) == str(room_id)), None)
+        if not matched and assigned:
+            clean = str(assigned).replace('Room', '').strip().lower()
+            matched = next((r for r in rooms if str(r.get('roomNumber', '')).strip().lower() == clean), None)
+        if not matched and rooms:
+            matched = rooms[idx % len(rooms)]
+        div_room_map[d_name] = matched
+
+    population = [create_individual(sessions, teachers, faculty_mapping, rooms, fixed_timings, global_start_idx, semester, entry_mode, divisions_info, start_time) for _ in range(POPULATION_SIZE)]
     best_individual = None
     best_fitness = float('inf')
     for generation in range(GENERATIONS):
-        population.sort(key=lambda x: calculate_fitness(x, teachers, faculty_max_workloads, global_start_idx, semester))
-        current_best = calculate_fitness(population[0], teachers, faculty_max_workloads, global_start_idx, semester)
+        population.sort(key=lambda x: calculate_fitness(x, teachers, faculty_max_workloads, global_start_idx, semester, start_time))
+        current_best = calculate_fitness(population[0], teachers, faculty_max_workloads, global_start_idx, semester, start_time)
         if current_best < best_fitness:
             best_individual = copy_individual(population[0])
             best_fitness = current_best
@@ -581,7 +731,7 @@ def run_genetic_algorithm(sessions, teachers, faculty_mapping, rooms, fixed_timi
         while len(next_generation) < POPULATION_SIZE:
             parent1, parent2 = random.choice(population[:10]), random.choice(population[:10])
             child = crossover(parent1, parent2)
-            child = mutate(child, teachers, rooms, global_start_idx, 0.1)
+            child = mutate(child, teachers, rooms, global_start_idx, 0.1, semester, div_room_map, start_time)
             next_generation.append(child)
         population = next_generation
     return best_individual
@@ -637,8 +787,32 @@ def generate_timetable(request: GenerationRequest):
             
         # 2. Regular Rotational Parallel Labs
         if regular_labs:
+            is_pg = (getattr(request, 'program', 'UG') or 'UG').upper() == 'PG' and request.semester in [1, 2, 3, 4]
+            
+            if is_pg:
+                # PG Semesters 1-4: exactly ONE lab batch
+                batch_name = "Batch A1"
+                for idx, lab_sub in enumerate(regular_labs):
+                    phys_lab = request.labsConfig[idx % len(request.labsConfig)] if request.labsConfig else {"id": idx+1, "name": f"Lab {idx+1}", "capacity": 30}
+                    group_sessions = [{
+                        "id": f"{div_name}_{lab_sub.get('_id')}_b{batch_name}",
+                        "subject": lab_sub,
+                        "type": "lab",
+                        "duration": 2,
+                        "division": div_name,
+                        "batch": batch_name,
+                        "num_batches": 1,
+                        "assigned_lab": phys_lab
+                    }]
+                    sessions.append({
+                        "id": f"{div_name}_pg_lab_{lab_sub.get('_id')}_{batch_name}",
+                        "type": "lab_group",
+                        "duration": 2,
+                        "division": div_name,
+                        "sessions": group_sessions
+                    })
             # When exactly 3 lab subjects exist in Sem 3, 4, 5, 6
-            if request.semester in [3, 4, 5, 6] and len(regular_labs) == 3:
+            elif request.semester in [3, 4, 5, 6] and len(regular_labs) == 3:
                 # Sort labs deterministically
                 sorted_labs = sorted(regular_labs, key=lambda s: str(s.get('subjectCode') or s.get('subjectName') or s.get('_id')))
                 batches = ["A1", "A2", "A3"]
@@ -728,27 +902,95 @@ def generate_timetable(request: GenerationRequest):
                         "sessions": group_sessions
                     })
 
-        for sub in request.subjects:
+        # Theory and Elective subjects
+        theory_subs = [
+            s for s in request.subjects 
+            if (s.get("lectureHours", 0) + s.get("tutorialHours", 0) > 0) 
+            or ('minor' in s.get('subjectName', '').lower()) 
+            or (s.get("practicalHours", 0) == 0)
+        ]
+        
+        compulsory_subs = []
+        elective_groups = {}
+
+        for sub in theory_subs:
+            cat = get_subject_category(sub)
+            if cat == 'Compulsory Subject':
+                compulsory_subs.append(sub)
+            else:
+                if cat not in elective_groups:
+                    elective_groups[cat] = []
+                elective_groups[cat].append(sub)
+
+        for sub in compulsory_subs:
             is_minor = 'minor' in sub.get('subjectName', '').lower()
             if is_minor:
                 sessions.append({"id": f"{div_name}_{sub.get('_id')}_minor", "subject": sub, "type": "theory", "duration": 2, "division": div_name})
             else:
-                for i in range(sub.get("lectureHours", 0) + sub.get("tutorialHours", 0)):
+                th_count = sub.get("lectureHours", 0) + sub.get("tutorialHours", 0)
+                if th_count == 0 and sub.get("practicalHours", 0) == 0:
+                    th_count = sub.get("credits", 3)
+                for i in range(th_count):
                     sessions.append({"id": f"{div_name}_{sub.get('_id')}_th_{i}", "subject": sub, "type": "theory", "duration": 1, "division": div_name})
+
+        for group_name, group_subs in elective_groups.items():
+            max_hrs = 1
+            for s in group_subs:
+                hrs = s.get("lectureHours", 0) + s.get("tutorialHours", 0)
+                if hrs == 0 and s.get("practicalHours", 0) == 0:
+                    hrs = s.get("credits", 3)
+                if hrs > max_hrs:
+                    max_hrs = hrs
+            clean_grp = group_name.replace(' ', '_').lower()
+            for h in range(max_hrs):
+                sessions.append({
+                    "id": f"{div_name}_{clean_grp}_slot_{h}",
+                    "group_name": group_name,
+                    "subject": group_subs[0],
+                    "subjects": group_subs,
+                    "type": "elective_group",
+                    "duration": 1,
+                    "division": div_name
+                })
                     
-    global_start_idx, allowed_theory_indices, valid_lab_start_indices, saturday_valid_indices = get_semester_timing_config(request.semester)
+    req_start_time = request.startTime
+    if not req_start_time and request.timetableRules:
+        req_start_time = request.timetableRules.get('college_start_time')
+
+    global_start_idx, allowed_theory_indices, valid_lab_start_indices, saturday_valid_indices = get_semester_timing_config(request.semester, req_start_time)
                     
-    best_individual = run_genetic_algorithm(sessions, request.teachers, request.facultyMapping, request.rooms, request.fixedTimings, request.facultyMaxWorkloads, global_start_idx, request.semester, request.entryMode)
-    pack_individual(best_individual, global_start_idx, request.semester)
-    best_fitness = calculate_fitness(best_individual, request.teachers, request.facultyMaxWorkloads, global_start_idx, request.semester)
+    best_individual = run_genetic_algorithm(sessions, request.teachers, request.facultyMapping, request.rooms, request.fixedTimings, request.facultyMaxWorkloads, global_start_idx, request.semester, request.entryMode, divs, req_start_time)
+    pack_individual(best_individual, global_start_idx, request.semester, req_start_time)
+    best_fitness = calculate_fitness(best_individual, request.teachers, request.facultyMaxWorkloads, global_start_idx, request.semester, req_start_time)
     
     matrix = {}
     raw_schedules = {div['name']: [] for div in divs}
+
+    div_room_map = {}
+    for idx, d in enumerate(divs):
+        d_name = d.get('name', f'DIV-{idx}')
+        assigned = d.get('assignedRoom') or d.get('rawRoomNumber')
+        room_id = d.get('roomId')
+        matched = None
+        if room_id:
+            matched = next((r for r in request.rooms if str(r.get('_id')) == str(room_id)), None)
+        if not matched and assigned:
+            clean = str(assigned).replace('Room', '').strip().lower()
+            matched = next((r for r in request.rooms if str(r.get('roomNumber', '')).strip().lower() == clean), None)
+        if not matched and request.rooms:
+            matched = request.rooms[idx % len(request.rooms)]
+        div_room_map[d_name] = matched
     
     for div in divs:
+        matched_rm = div_room_map.get(div['name'])
+        rm_num = matched_rm.get('roomNumber') if matched_rm else ''
         matrix[div['name']] = {
             "divisionName": div['name'],
+            "strength": div.get('strength', 60),
+            "assignedRoom": div.get('assignedRoom') or (f"Room {rm_num}" if rm_num and not rm_num.startswith('R') and not rm_num.startswith('PG') else (rm_num or 'Room 101')),
+            "roomCapacity": div.get('roomCapacity') or (matched_rm.get('capacity', 60) if matched_rm else 60),
             "semester": request.subjects[0].get("semester", 1) if request.subjects else 1,
+            "collegeStartTime": "08:00" if global_start_idx == 0 else "09:00",
             "days": {day: {slot: None for slot in SLOTS} for day in DAYS}
         }
     
@@ -822,6 +1064,61 @@ def generate_timetable(request: GenerationRequest):
                 next_slot = SLOTS[entry['slot_idx'] + 1]
                 if matrix[div_name]['days'][day].get(next_slot) is None:
                     matrix[div_name]['days'][day][next_slot] = {"type": "busy", "parent": slot}
+        elif entry['session']['type'] == 'elective_group':
+            div_name = entry['session'].get('division', 'DIV-A')
+            end_slot_time = THEORY_END_TIMES.get(entry['slot_idx'], "16:30")
+            group_name = entry['session'].get('group_name', 'Elective')
+            
+            sub_codes = []
+            sub_names = []
+            faculties = entry['teacher'] if isinstance(entry['teacher'], list) else [entry['teacher']]
+            rooms_assigned = entry['room'] if isinstance(entry['room'], list) else [entry['room']]
+            
+            elective_details = []
+            for idx, sub in enumerate(entry['session'].get('subjects', [])):
+                s_code = sub.get('subjectCode') or sub.get('code') or sub.get('subjectName') or 'Elective'
+                s_name = sub.get('subjectName') or sub.get('title') or s_code
+                sub_codes.append(s_code)
+                sub_names.append(s_name)
+                
+                t_obj = faculties[idx] if idx < len(faculties) else faculties[0]
+                r_obj = rooms_assigned[idx] if idx < len(rooms_assigned) else rooms_assigned[0]
+                
+                elective_details.append({
+                    "subject": sub,
+                    "faculty": [t_obj] if t_obj else [],
+                    "room": r_obj
+                })
+                
+                raw_schedules[div_name].append({
+                    "day": day,
+                    "startTime": slot,
+                    "endTime": end_slot_time,
+                    "subject": {
+                        "_id": str(sub.get('_id') or sub.get('id')),
+                        "subjectName": s_name,
+                        "subjectCode": s_code
+                    },
+                    "faculty": [{"_id": str(t_obj.get('_id') or t_obj.get('id')), "name": t_obj.get('name')}] if t_obj else [],
+                    "room": {"_id": str(r_obj.get('_id', '')), "roomNumber": r_obj.get('roomNumber')} if r_obj else None,
+                    "batch": None
+                })
+                
+            if matrix[div_name]['days'][day][slot] is None:
+                matrix[div_name]['days'][day][slot] = {
+                    "subject": {
+                        "subjectCode": " / ".join(sub_codes),
+                        "subjectName": f"{group_name}: " + " / ".join(sub_names)
+                    },
+                    "faculty": faculties,
+                    "room": rooms_assigned,
+                    "type": "elective",
+                    "groupName": group_name,
+                    "startTime": slot,
+                    "endTime": end_slot_time,
+                    "electives": elective_details,
+                    "batch": None
+                }
         else:
             div_name = entry['session'].get('division', 'DIV-A')
             faculties = entry['teacher'] if isinstance(entry['teacher'], list) else [entry['teacher']]

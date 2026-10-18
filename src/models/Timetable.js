@@ -11,6 +11,12 @@ const timetableSchema = new mongoose.Schema(
       ref: 'Division',
       required: [true, 'Please add a division'],
     },
+    program: {
+      type: String,
+      enum: ['UG', 'PG'],
+      default: 'UG',
+      index: true,
+    },
     generatedSchedule: [
       {
         day: {

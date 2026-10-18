@@ -42,7 +42,7 @@ const Dashboard = () => {
     { name: 'Total Teachers', value: stats.teachers, icon: <FiUsers />, color: 'bg-indigo-600', link: '/teachers' },
     { name: 'Total Subjects', value: stats.subjects, icon: <FiBook />, color: 'bg-emerald-500', link: '/subjects' },
     { name: 'Total Rooms', value: stats.rooms, icon: <FiBox />, color: 'bg-purple-600', link: '/infrastructure' },
-    { name: 'Total Divisions', value: stats.divisions, icon: <FiLayers />, color: 'bg-amber-500', link: '/divisions' },
+    { name: 'Total Divisions', value: stats.divisions, icon: <FiLayers />, color: 'bg-amber-500', link: '/infrastructure' },
   ];
 
   if (loading) return (

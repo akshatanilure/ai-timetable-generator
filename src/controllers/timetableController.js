@@ -62,10 +62,11 @@ exports.generateTimetable = async (req, res) => {
 
     // 1-5. Load all necessary data
     const teachers = await Teacher.find();
-    const rooms = await Room.find();
-    const labs = await Lab.find().populate('supportedSubjects');
-    const divisions = await Division.find({ semester, department: branch || 'CSE' });
-    const subjects = await Subject.find({ semester, branch: branch || 'CSE' });
+    const prog = req.body.program || 'UG';
+    const programFilter = prog === 'UG' ? { $or: [{ program: 'UG' }, { program: { $exists: false } }, { program: null }] } : { program: prog };
+    const rooms = await Room.find(programFilter);
+    const labs = await Lab.find(programFilter).populate('supportedSubjects');
+    const subjects = await Subject.find({ semester, branch: branch || 'CSE', ...programFilter });
     const batches = await Batch.find().populate('division');
     
     // 6. Apply constraints
@@ -80,7 +81,7 @@ exports.generateTimetable = async (req, res) => {
       return res.status(400).json({ success: false, error: 'No divisions or subjects found for the given criteria' });
     }
 
-    const timetableRules = getRulesForSemester(parseInt(semester) || 1);
+    const timetableRules = getRulesForSemester(parseInt(semester) || 1, req.body.program || 'UG', req.body.startTime);
 
     // 7. Initialize Generator and Generate
     const generator = new TimetableGenerator({
@@ -166,12 +167,15 @@ exports.generateTimetable = async (req, res) => {
 // @access  Private (Admin)
 exports.generateTimetableML = async (req, res) => {
   try {
-    const { semester, branch, facultyMapping, divisions, facultyMaxWorkloads, fixedTimings, labsConfig, entryMode } = req.body;
+    const { semester, branch, facultyMapping, divisions, facultyMaxWorkloads, fixedTimings, labsConfig, entryMode, startTime } = req.body;
 
     // 1. Gather all data from MongoDB exactly like the normal generator
     const teachers = await Teacher.find();
-    const rooms = await Room.find();
-    const subjects = await Subject.find({ semester, branch: branch || 'CSE' });
+    const prog = req.body.program || 'UG';
+    const programFilter = prog === 'UG' ? { $or: [{ program: 'UG' }, { program: { $exists: false } }, { program: null }] } : { program: prog };
+    const rooms = await Room.find(programFilter);
+    const labs = await Lab.find(programFilter).populate('supportedSubjects');
+    const subjects = await Subject.find({ semester, branch: branch || 'CSE', ...programFilter });
     const constraints = await Constraint.findOne({ semester, department: branch || 'CSE' });
 
     if (!subjects.length) {
@@ -184,10 +188,26 @@ exports.generateTimetableML = async (req, res) => {
     const Timetable = require('../models/Timetable');
     const activeTimetables = await Timetable.find();
     
-    const sameParityTimetables = activeTimetables.filter(t => {
+    let allParityTimetables = activeTimetables.filter(t => {
       const isOdd = t.semester % 2 !== 0;
       return isOdd === isCurrentOdd;
     });
+
+    if (Array.isArray(req.body.inMemoryTimetables)) {
+      req.body.inMemoryTimetables.forEach(mem => {
+        const memSem = parseInt(mem.semester) || 1;
+        const isMemOdd = memSem % 2 !== 0;
+        if (isMemOdd === isCurrentOdd && mem.rawSchedules && typeof mem.rawSchedules === 'object') {
+          const flatSchedule = [];
+          Object.values(mem.rawSchedules).forEach(schedArr => {
+            if (Array.isArray(schedArr)) {
+              schedArr.forEach(entry => flatSchedule.push(entry));
+            }
+          });
+          allParityTimetables.push({ semester: memSem, generatedSchedule: flatSchedule });
+        }
+      });
+    }
 
     const timeToMinutes = (time) => {
       if (!time) return 0;
@@ -199,7 +219,7 @@ exports.generateTimetableML = async (req, res) => {
       const tObj = t.toJSON();
       
       let dynamicWorkload = 0;
-      sameParityTimetables.forEach(tt => {
+      allParityTimetables.forEach(tt => {
         if (tt.generatedSchedule && Array.isArray(tt.generatedSchedule)) {
           tt.generatedSchedule.forEach(entry => {
             const hasFaculty = Array.isArray(entry.faculty)
@@ -227,7 +247,7 @@ exports.generateTimetableML = async (req, res) => {
       adjustedMaxWorkloads[tId] = Math.max(0, currentLimit - teacher.currentWorkload);
     }
 
-    const timetableRules = getRulesForSemester(semesterVal);
+    const timetableRules = getRulesForSemester(semesterVal, prog, startTime);
 
     // Format subjects to ensure isFullClassLab is set correctly
     const formattedSubjects = subjects.map(s => {
@@ -246,17 +266,19 @@ exports.generateTimetableML = async (req, res) => {
         ...t,
         maxWorkloadPerWeek: adjustedMaxWorkloads[t._id.toString()]
       })),
-      rooms,
+      rooms: rooms.map(r => (r.toJSON ? r.toJSON() : r)),
       constraints: constraints || {},
       facultyMapping: facultyMapping || {},
       divisions: divisions || [{ name: 'DIV-A', strength: 60 }],
       facultyMaxWorkloads: adjustedMaxWorkloads,
       fixedTimings: fixedTimings || {},
       entryMode: entryMode || 'dynamic',
-      labsConfig: labsConfig || [],
+      labsConfig: (labsConfig && labsConfig.length > 0) ? labsConfig : labs.map((l, i) => ({ id: i + 1, name: l.labName, capacity: l.capacity })),
       semester: semesterVal,
       branch: branch || 'CSE',
-      timetableRules
+      timetableRules,
+      startTime: timetableRules.college_start_time,
+      program: prog
     };
 
     // 3. Make HTTP request to the Python FastAPI microservice with Auto-Repair loop
@@ -311,7 +333,7 @@ exports.generateTimetableML = async (req, res) => {
 // @access  Private (Admin)
 exports.saveTimetableML = async (req, res) => {
   try {
-    const { semester, branch, rawSchedules } = req.body;
+    const { semester, branch, rawSchedules, divisions: inputDivisions, program } = req.body;
     if (!rawSchedules || typeof rawSchedules !== 'object') {
       return res.status(400).json({ success: false, error: 'rawSchedules is required and must be an object' });
     }
@@ -321,11 +343,23 @@ exports.saveTimetableML = async (req, res) => {
     const Batch = require('../models/Batch');
     const mongoose = require('mongoose');
 
-    const divisions = await Division.find({ semester, department: branch || 'CSE' });
+    const prog = program || 'UG';
+    const divFilter = { semester, department: branch || 'CSE' };
+    if (prog === 'PG') {
+      divFilter.program = 'PG';
+    } else {
+      divFilter.$or = [{ program: 'UG' }, { program: { $exists: false } }, { program: null }];
+    }
+
+    const divisions = await Division.find(divFilter);
     const saved = [];
     
     for (const [divName, schedule] of Object.entries(rawSchedules)) {
       if (!Array.isArray(schedule)) continue;
+
+      const inputDiv = Array.isArray(inputDivisions) ? inputDivisions.find(d => d.name === divName) : null;
+      const targetStrength = inputDiv?.strength || (prog === 'PG' ? 30 : 60);
+      const targetRoom = inputDiv?.assignedRoom || inputDiv?.rawRoomNumber || '';
 
       let div = divisions.find(d => d.divisionName === divName);
       if (!div) {
@@ -333,8 +367,15 @@ exports.saveTimetableML = async (req, res) => {
            divisionName: divName,
            semester,
            department: branch || 'CSE',
-           strength: 60
+           strength: targetStrength,
+           program: prog,
+           assignedRoom: targetRoom
          });
+      } else {
+         div.strength = targetStrength;
+         div.program = prog;
+         if (targetRoom) div.assignedRoom = targetRoom;
+         await div.save();
       }
       
       const formattedSchedule = [];
@@ -347,7 +388,7 @@ exports.saveTimetableML = async (req, res) => {
             const normalizedBatch = entry.batch.batchName.toString().trim().replace(/^batch\s*/i, '').toUpperCase();
             let batch = await Batch.findOne({ batchName: normalizedBatch, division: div._id });
             if (!batch) {
-                const fallbackCount = Math.max(1, Math.ceil((div.strength || 60) / 3));
+                const fallbackCount = prog === 'PG' ? (div.strength || 30) : Math.max(1, Math.ceil((div.strength || 60) / 3));
                 batch = await Batch.create({ batchName: normalizedBatch, division: div._id, studentCount: fallbackCount });
             }
             batchId = batch._id;
@@ -391,10 +432,15 @@ exports.saveTimetableML = async (req, res) => {
       await Timetable.deleteMany({ semester, division: div._id });
 
       const creatorId = (req.user && req.user.id) || div._id;
+      const effectiveStartTime = req.body.startTime || ([1, 2, 5].includes(parseInt(semester, 10)) ? "08:00" : "09:00");
       const timetable = await Timetable.create({
         semester,
         division: div._id,
+        program: prog,
         generatedSchedule: formattedSchedule,
+        settings: {
+          college_start_time: effectiveStartTime
+        },
         createdBy: creatorId
       });
       saved.push(timetable);

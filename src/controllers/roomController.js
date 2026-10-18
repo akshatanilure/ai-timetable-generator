@@ -2,7 +2,11 @@ const Room = require('../models/Room');
 
 exports.getRooms = async (req, res) => {
   try {
-    const rooms = await Room.find();
+    const prog = req.query.program || 'UG';
+    const query = prog === 'PG'
+      ? { program: 'PG' }
+      : { $or: [{ program: 'UG' }, { program: { $exists: false } }, { program: null }] };
+    const rooms = await Room.find(query);
     res.status(200).json({ success: true, count: rooms.length, data: rooms });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
@@ -21,7 +25,11 @@ exports.getRoom = async (req, res) => {
 
 exports.createRoom = async (req, res) => {
   try {
-    const room = await Room.create(req.body);
+    const roomData = {
+      ...req.body,
+      program: req.body.program || 'UG',
+    };
+    const room = await Room.create(roomData);
     res.status(201).json({ success: true, data: room });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });

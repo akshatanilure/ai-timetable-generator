@@ -84,7 +84,8 @@ class TimetableGenerator {
 
     daysArr.forEach(day => {
       if (day === 'Saturday') {
-        this.timeSlots[day] = dailySlots.filter(s => this.timeToMinutes(s) < this.timeToMinutes('14:30'));
+        const satLimit = this.timetableRules.is8amStart ? '12:30' : '13:30';
+        this.timeSlots[day] = dailySlots.filter(s => this.timeToMinutes(s) < this.timeToMinutes(satLimit));
       } else {
         this.timeSlots[day] = dailySlots;
       }
@@ -185,7 +186,27 @@ class TimetableGenerator {
     const vars = [];
     this.divisions.forEach(div => {
       const divSubjects = this.subjects.filter(s => s.semester === div.semester && s.department === div.department);
+
+      const getSubjectCategory = (s) => {
+        if (s.subjectCategory && s.subjectCategory.trim()) return s.subjectCategory.trim();
+        if (s.elective) return 'Elective 1';
+        return 'Compulsory Subject';
+      };
+
+      const compulsorySubs = [];
+      const electiveGroups = {};
+
       divSubjects.forEach(sub => {
+        const cat = getSubjectCategory(sub);
+        if (cat === 'Compulsory Subject') {
+          compulsorySubs.push(sub);
+        } else {
+          if (!electiveGroups[cat]) electiveGroups[cat] = [];
+          electiveGroups[cat].push(sub);
+        }
+      });
+
+      compulsorySubs.forEach(sub => {
         // Apply semester priority
         sub.priority = this.handler.getSubjectPriority(sub);
 
@@ -235,6 +256,27 @@ class TimetableGenerator {
               }
             }
           }
+        }
+      });
+
+      // Elective groups: All subjects in group scheduled in parallel
+      Object.entries(electiveGroups).forEach(([groupName, subs]) => {
+        let maxLectures = 1;
+        subs.forEach(sub => {
+          sub.priority = this.handler.getSubjectPriority(sub);
+          const hrs = (sub.lectureHours || 0) + (sub.tutorialHours || 0) || sub.credits || 3;
+          if (hrs > maxLectures) maxLectures = hrs;
+        });
+
+        for (let i = 0; i < maxLectures; i++) {
+          vars.push({
+            division: div,
+            subject: subs[0],
+            subjects: subs,
+            type: 'elective_group',
+            groupName: groupName,
+            duration: 1
+          });
         }
       });
     });
@@ -335,6 +377,25 @@ class TimetableGenerator {
               room: allocation.lab
             });
           }
+        } else if (variable.type === 'elective_group') {
+          const suitableRooms = this.rooms.filter(r => r.roomType === 'lecture' && r.capacity >= Math.floor(variable.division.strength / variable.subjects.length));
+          const roomsToUse = suitableRooms.length >= variable.subjects.length ? suitableRooms.slice(0, variable.subjects.length) : this.rooms.slice(0, variable.subjects.length);
+          const facultiesToUse = variable.subjects.map((sub, sIdx) => {
+            const mapped = this.facultyMapping[sub._id.toString()];
+            if (mapped?.theory) {
+              const f = this.teachers.find(t => t._id.toString() === mapped.theory);
+              if (f) return f;
+            }
+            return this.teachers[sIdx % this.teachers.length];
+          });
+          domains.push({
+            day,
+            slots,
+            faculty: facultiesToUse,
+            room: roomsToUse[0] || this.rooms[0],
+            rooms: roomsToUse,
+            subjects: variable.subjects
+          });
         } else {
           // Regular Theory logic
           for (const faculty of suitableFaculty) {
@@ -394,17 +455,23 @@ class TimetableGenerator {
       }
 
       // Room Overlap
-      if (this.roomAssignments.get(room._id.toString())?.has(key)) return false;
+      if (assignment.rooms && Array.isArray(assignment.rooms)) {
+        for (const rm of assignment.rooms) {
+          if (this.roomAssignments.get(rm._id.toString())?.has(key)) return false;
+        }
+      } else {
+        if (this.roomAssignments.get(room._id.toString())?.has(key)) return false;
+      }
 
       // Division/Batch Overlap
       const divAssigns = this.divisionAssignments.get(variable.division._id.toString());
       if (divAssigns?.has(key)) {
         const existing = divAssigns.get(key);
-        // If existing is 'theory', whole division is locked.
-        if (existing.type === 'theory') return false;
+        // If existing is 'theory' or 'elective_group', whole division is locked.
+        if (existing.type === 'theory' || existing.type === 'elective_group') return false;
 
-        // If current is 'theory', it cannot overlap with any existing lab.
-        if (variable.type === 'theory') return false;
+        // If current is 'theory' or 'elective_group', it cannot overlap with any existing lab.
+        if (variable.type === 'theory' || variable.type === 'elective_group') return false;
 
         // If either is a full-class lab, the whole division is locked.
         if (variable.isFullClassLab || existing.isFullClassLab) return false;
@@ -471,7 +538,11 @@ class TimetableGenerator {
     slots.forEach(slot => {
       const key = `${day}-${slot}`;
       faculty.forEach(f => this.addToMap(this.facultyAssignments, f._id.toString(), key));
-      this.addToMap(this.roomAssignments, room._id.toString(), key);
+      if (assignment.rooms && Array.isArray(assignment.rooms)) {
+        assignment.rooms.forEach(rm => this.addToMap(this.roomAssignments, rm._id.toString(), key));
+      } else {
+        this.addToMap(this.roomAssignments, room._id.toString(), key);
+      }
       let divAssigns = this.divisionAssignments.get(variable.division._id.toString());
       if (!divAssigns) {
         divAssigns = new Map();
@@ -492,22 +563,39 @@ class TimetableGenerator {
         divAssigns.get(key).subjects.add(variable.subject._id.toString());
       } else if (variable.type === 'lab' && variable.isFullClassLab) {
         divAssigns.get(key).isFullClassLab = true;
-      } else if (variable.type === 'theory') {
-        divAssigns.set(key, { type: 'theory', batches: new Set(), subjects: new Set(), isFullClassLab: false });
+      } else if (variable.type === 'theory' || variable.type === 'elective_group') {
+        divAssigns.set(key, { type: variable.type, batches: new Set(), subjects: new Set(), isFullClassLab: false });
       }
     });
 
-    this.timetable.push({
-      day,
-      startTime: slots[0],
-      endTime: this.calculateEndTime(slots[0], variable.duration || 1),
-      subject: variable.subject,
-      faculty: faculty.length > 1 ? faculty : faculty[0],
-      room,
-      division: variable.division,
-      batch: variable.batch,
-      type: variable.type
-    });
+    if (variable.type === 'elective_group' && variable.subjects) {
+      variable.subjects.forEach((sub, sIdx) => {
+        this.timetable.push({
+          day,
+          startTime: slots[0],
+          endTime: this.calculateEndTime(slots[0], variable.duration || 1),
+          subject: sub,
+          faculty: faculty[sIdx] || faculty[0],
+          room: assignment.rooms ? (assignment.rooms[sIdx] || room) : room,
+          division: variable.division,
+          batch: null,
+          type: 'elective',
+          groupName: variable.groupName
+        });
+      });
+    } else {
+      this.timetable.push({
+        day,
+        startTime: slots[0],
+        endTime: this.calculateEndTime(slots[0], variable.duration || 1),
+        subject: variable.subject,
+        faculty: faculty.length > 1 ? faculty : faculty[0],
+        room,
+        division: variable.division,
+        batch: variable.batch,
+        type: variable.type
+      });
+    }
   }
 
   removeAssignment(variable, assignment) {
@@ -516,11 +604,15 @@ class TimetableGenerator {
     slots.forEach(slot => {
       const key = `${day}-${slot}`;
       faculty.forEach(f => this.facultyAssignments.get(f._id.toString()).delete(key));
-      this.roomAssignments.get(room._id.toString()).delete(key);
+      if (assignment.rooms && Array.isArray(assignment.rooms)) {
+        assignment.rooms.forEach(rm => this.roomAssignments.get(rm._id.toString()).delete(key));
+      } else {
+        this.roomAssignments.get(room._id.toString()).delete(key);
+      }
 
       const divAssigns = this.divisionAssignments.get(variable.division._id.toString());
       if (divAssigns && divAssigns.has(key)) {
-        if (variable.type === 'theory' || variable.isFullClassLab) {
+        if (variable.type === 'theory' || variable.type === 'elective_group' || variable.isFullClassLab) {
           divAssigns.delete(key);
         } else if (variable.type === 'lab' && variable.batch) {
           const entry = divAssigns.get(key);
@@ -533,7 +625,11 @@ class TimetableGenerator {
       }
     });
 
-    this.timetable.pop();
+    if (variable.type === 'elective_group' && variable.subjects) {
+      this.timetable = this.timetable.filter(e => !(e.day === day && e.startTime === slots[0] && e.division._id.toString() === variable.division._id.toString()));
+    } else {
+      this.timetable.pop();
+    }
   }
 
   addToMap(map, id, key) {

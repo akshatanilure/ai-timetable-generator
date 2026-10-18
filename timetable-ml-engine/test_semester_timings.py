@@ -33,5 +33,18 @@ for sem, expected_start_idx, expected_1230_allowed in sem_cases:
 
 if all_passed:
     print("\nALL SEMESTER TIMING RULES VERIFIED SUCCESSFULLY!")
+    
+    # Test overrides
+    print("\nTesting Custom Start Time Overrides...")
+    s1_override = main.get_semester_timing_config(1, "09:00")
+    assert s1_override[0] == 1, "Sem 1 overridden to 9:00 should have start_idx 1"
+    assert 4 in s1_override[1], "Sem 1 overridden to 9:00 should allow 12:30"
+    print("  Sem 1 overridden to 9:00 AM -> SUCCESS (starts at 9:00, 12:30 allowed)")
+
+    s3_override = main.get_semester_timing_config(3, "08:00")
+    assert s3_override[0] == 0, "Sem 3 overridden to 8:00 should have start_idx 0"
+    assert 4 not in s3_override[1], "Sem 3 overridden to 8:00 should not allow 12:30"
+    print("  Sem 3 overridden to 8:00 AM -> SUCCESS (starts at 8:00, 12:30 blocked)")
+    print("\nALL OVERRIDE TESTS PASSED!")
 else:
     print("\nVERIFICATION FAILED!")

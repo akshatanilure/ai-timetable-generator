@@ -11,6 +11,13 @@ const SUBJECT_TYPES = [
   { value: 'project', label: 'Project' }
 ];
 
+const SUBJECT_CATEGORIES = [
+  'Compulsory Subject',
+  'Elective 1',
+  'Elective 2',
+  'Elective 3'
+];
+
 const Subjects = () => {
   const [subjects, setSubjects] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -36,6 +43,7 @@ const Subjects = () => {
     tutorialHours: 0,
     practicalHours: 0,
     elective: false,
+    subjectCategory: 'Compulsory Subject',
     isFullClassLab: false
   });
 
@@ -69,6 +77,7 @@ const Subjects = () => {
       tutorialHours: 0,
       practicalHours: 0,
       elective: false,
+      subjectCategory: 'Compulsory Subject',
       isFullClassLab: false
     });
     setIsModalOpen(true);
@@ -76,6 +85,7 @@ const Subjects = () => {
 
   const handleEditClick = (sub) => {
     setEditingSubject(sub);
+    const resolvedCategory = sub.subjectCategory || (sub.elective ? 'Elective 1' : 'Compulsory Subject');
     setFormData({
       subjectName: sub.subjectName || '',
       subjectCode: sub.subjectCode || '',
@@ -87,7 +97,8 @@ const Subjects = () => {
       lectureHours: sub.lectureHours || 0,
       tutorialHours: sub.tutorialHours || 0,
       practicalHours: sub.practicalHours || 0,
-      elective: Boolean(sub.elective),
+      elective: resolvedCategory !== 'Compulsory Subject',
+      subjectCategory: resolvedCategory,
       isFullClassLab: Boolean(sub.isFullClassLab)
     });
     setIsModalOpen(true);
@@ -106,6 +117,14 @@ const Subjects = () => {
     }
   };
 
+  const handleCategoryChange = (category) => {
+    setFormData(prev => ({
+      ...prev,
+      subjectCategory: category,
+      elective: category !== 'Compulsory Subject'
+    }));
+  };
+
   const handleTypeChange = (newType) => {
     setFormData(prev => {
       let l = prev.lectureHours;
@@ -117,10 +136,12 @@ const Subjects = () => {
         if (l === 0) l = 3;
         p = 0;
       }
+      const isElec = newType === 'elective';
       return {
         ...prev,
         subjectType: newType,
-        elective: newType === 'elective' ? true : prev.elective,
+        subjectCategory: isElec && prev.subjectCategory === 'Compulsory Subject' ? 'Elective 1' : prev.subjectCategory,
+        elective: isElec ? true : prev.elective,
         lectureHours: l,
         practicalHours: p
       };
@@ -135,6 +156,7 @@ const Subjects = () => {
 
     setSubmitting(true);
     try {
+      const isElective = formData.subjectCategory && formData.subjectCategory !== 'Compulsory Subject';
       const payload = {
         subjectName: formData.subjectName.trim(),
         subjectCode: formData.subjectCode.trim().toUpperCase(),
@@ -146,7 +168,8 @@ const Subjects = () => {
         lectureHours: Number(formData.lectureHours) || 0,
         tutorialHours: Number(formData.tutorialHours) || 0,
         practicalHours: Number(formData.practicalHours) || 0,
-        elective: Boolean(formData.elective),
+        subjectCategory: formData.subjectCategory || (isElective ? 'Elective 1' : 'Compulsory Subject'),
+        elective: Boolean(isElective),
         isFullClassLab: Boolean(formData.isFullClassLab)
       };
 
@@ -292,9 +315,9 @@ const Subjects = () => {
                         <div>
                           <div className="font-bold text-gray-900 text-sm flex items-center gap-2">
                             {sub.subjectName}
-                            {sub.elective && (
-                              <span className="bg-amber-100 text-amber-700 text-[10px] font-extrabold px-1.5 py-0.5 rounded">
-                                ELECTIVE
+                            {((sub.subjectCategory && sub.subjectCategory !== 'Compulsory Subject') || sub.elective) && (
+                              <span className="bg-amber-100 text-amber-800 text-[10px] font-extrabold px-1.5 py-0.5 rounded uppercase tracking-wide">
+                                {sub.subjectCategory && sub.subjectCategory !== 'Compulsory Subject' ? sub.subjectCategory : 'ELECTIVE 1'}
                               </span>
                             )}
                             {sub.isFullClassLab && (
@@ -519,17 +542,29 @@ const Subjects = () => {
                 </div>
               </div>
 
-              {/* Additional Options */}
-              <div className="pt-2 space-y-2 border-t border-gray-100">
-                <label className="flex items-center gap-2.5 cursor-pointer select-none">
-                  <input
-                    type="checkbox"
-                    checked={formData.elective}
-                    onChange={(e) => setFormData({ ...formData, elective: e.target.checked })}
-                    className="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500"
-                  />
-                  <span className="text-xs font-bold text-gray-700">Elective Subject (Multiple options per student pool)</span>
+              {/* Subject Category Dropdown */}
+              <div className="pt-2 border-t border-gray-100">
+                <label className="block text-xs font-bold text-gray-700 mb-1.5">
+                  Subject Category
                 </label>
+                <select
+                  value={formData.subjectCategory || 'Compulsory Subject'}
+                  onChange={(e) => handleCategoryChange(e.target.value)}
+                  className="w-full p-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm font-semibold text-gray-800 outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white transition-all cursor-pointer"
+                >
+                  {Array.from(new Set([...SUBJECT_CATEGORIES, formData.subjectCategory].filter(Boolean))).map((cat) => (
+                    <option key={cat} value={cat}>
+                      {cat}
+                    </option>
+                  ))}
+                </select>
+                <p className="text-[11px] text-gray-400 mt-1">
+                  Subjects in the same elective group are scheduled simultaneously at non-overlapping slots.
+                </p>
+              </div>
+
+              {/* Additional Options */}
+              <div className="pt-1 space-y-2">
 
                 {formData.subjectType === 'lab' && (
                   <label className="flex items-center gap-2.5 cursor-pointer select-none">

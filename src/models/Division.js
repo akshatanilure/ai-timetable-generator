@@ -19,6 +19,15 @@ const divisionSchema = new mongoose.Schema(
       type: Number,
       required: [true, 'Please add division strength'],
     },
+    program: {
+      type: String,
+      enum: ['UG', 'PG'],
+      default: 'UG',
+      index: true,
+    },
+    assignedRoom: {
+      type: String,
+    },
   },
   {
     timestamps: true,

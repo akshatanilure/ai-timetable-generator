@@ -14,25 +14,40 @@ const Login = () => {
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   
-  const { login } = useAuth();
+  const { user, login } = useAuth();
   const navigate = useNavigate();
 
   useEffect(() => {
-    if (role) {
+    if (user) {
+      if (user.role === 'admin') navigate('/admin/dashboard', { replace: true });
+      else if (user.role === 'teacher') navigate('/teacher/dashboard', { replace: true });
+      else navigate('/student/dashboard', { replace: true });
+    }
+  }, [user, navigate]);
+
+  useEffect(() => {
+    if (role && !user) {
       toast(`Logging in as ${role.charAt(0).toUpperCase() + role.slice(1)}`, {
         icon: '🔑',
       });
     }
-  }, [role]);
+  }, [role, user]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
     const toastId = toast.loading('Authenticating...');
     try {
-      await login(email, password);
-      toast.success(`Welcome back, ${role}!`, { id: toastId });
-      navigate('/dashboard');
+      const resData = await login(email, password);
+      const actualRole = resData.role;
+      toast.success(`Welcome back, ${resData.name || actualRole}!`, { id: toastId });
+      if (actualRole === 'admin') {
+        navigate('/admin/dashboard', { replace: true });
+      } else if (actualRole === 'teacher') {
+        navigate('/teacher/dashboard', { replace: true });
+      } else {
+        navigate('/student/dashboard', { replace: true });
+      }
     } catch (err) {
       toast.error(err.response?.data?.error || 'Invalid credentials. Please try again.', { id: toastId });
     } finally {

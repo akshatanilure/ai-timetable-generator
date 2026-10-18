@@ -5,7 +5,6 @@ const labSchema = new mongoose.Schema(
     labName: {
       type: String,
       required: [true, 'Please add a lab name'],
-      unique: true,
       trim: true,
     },
     labType: {
@@ -27,10 +26,18 @@ const labSchema = new mongoose.Schema(
         type: String,
       },
     ],
+    program: {
+      type: String,
+      enum: ['UG', 'PG'],
+      default: 'UG',
+      index: true,
+    },
   },
   {
     timestamps: true,
   }
 );
+
+labSchema.index({ labName: 1, program: 1 }, { unique: true });
 
 module.exports = mongoose.model('Lab', labSchema);

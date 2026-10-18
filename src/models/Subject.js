@@ -5,7 +5,6 @@ const subjectSchema = new mongoose.Schema(
     subjectCode: {
       type: String,
       required: [true, 'Please add a subject code'],
-      unique: true,
       trim: true,
     },
     subjectName: {
@@ -54,14 +53,40 @@ const subjectSchema = new mongoose.Schema(
       type: Boolean,
       default: false,
     },
+    subjectCategory: {
+      type: String,
+      default: 'Compulsory Subject',
+      trim: true,
+    },
     isFullClassLab: {
       type: Boolean,
       default: false,
+    },
+    program: {
+      type: String,
+      enum: ['UG', 'PG'],
+      default: 'UG',
+      index: true,
     },
   },
   {
     timestamps: true,
   }
 );
+
+subjectSchema.pre('save', function (next) {
+  if (this.subjectCategory && this.subjectCategory !== 'Compulsory Subject') {
+    this.elective = true;
+  } else if (this.subjectCategory === 'Compulsory Subject') {
+    this.elective = false;
+  } else if (this.elective) {
+    this.subjectCategory = 'Elective 1';
+  } else {
+    this.subjectCategory = 'Compulsory Subject';
+  }
+  next();
+});
+
+subjectSchema.index({ subjectCode: 1, program: 1 }, { unique: true });
 
 module.exports = mongoose.model('Subject', subjectSchema);

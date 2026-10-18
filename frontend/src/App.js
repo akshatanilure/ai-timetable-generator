@@ -22,9 +22,10 @@ import Infrastructure from './pages/Infrastructure';
 
 const DashboardSelector = () => {
   const { user } = useAuth();
-  if (user?.role === 'admin') return <Dashboard />;
-  if (user?.role === 'teacher') return <TeacherDashboard />;
-  return <StudentDashboard />;
+  if (user?.role === 'admin') return <Navigate to="/admin/dashboard" replace />;
+  if (user?.role === 'teacher') return <Navigate to="/teacher/dashboard" replace />;
+  if (user?.role === 'student') return <Navigate to="/student/dashboard" replace />;
+  return <Navigate to="/login" replace />;
 };
 
 function App() {
@@ -40,17 +41,40 @@ function App() {
             <Route path="/login/:role" element={<Login />} />
             <Route path="/register" element={<Register />} />
             
-            {/* Role-Based Protected Routes */}
+            {/* General Dashboard Redirect */}
             <Route path="/dashboard" element={
               <ProtectedRoute>
+                <DashboardSelector />
+              </ProtectedRoute>
+            } />
+
+            {/* Role-Specific Dashboards */}
+            <Route path="/admin/dashboard" element={
+              <ProtectedRoute roles={['admin']}>
                 <DashboardLayout>
-                  <DashboardSelector />
+                  <Dashboard />
+                </DashboardLayout>
+              </ProtectedRoute>
+            } />
+
+            <Route path="/teacher/dashboard" element={
+              <ProtectedRoute roles={['teacher', 'admin']}>
+                <DashboardLayout>
+                  <TeacherDashboard />
+                </DashboardLayout>
+              </ProtectedRoute>
+            } />
+
+            <Route path="/student/dashboard" element={
+              <ProtectedRoute roles={['student', 'admin']}>
+                <DashboardLayout>
+                  <StudentDashboard />
                 </DashboardLayout>
               </ProtectedRoute>
             } />
 
             <Route path="/timetables" element={
-              <ProtectedRoute>
+              <ProtectedRoute roles={['admin', 'teacher', 'student']}>
                 <DashboardLayout>
                   <Timetables />
                 </DashboardLayout>

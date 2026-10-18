@@ -11,7 +11,15 @@ const SUBJECT_TYPES = [
   { value: 'project', label: 'Project' }
 ];
 
+const SUBJECT_CATEGORIES = [
+  'Compulsory Subject',
+  'Elective 1',
+  'Elective 2',
+  'Elective 3'
+];
+
 const Subjects = () => {
+  const [activeProgram, setActiveProgram] = useState('UG'); // 'UG' or 'PG'
   const [subjects, setSubjects] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
@@ -36,16 +44,19 @@ const Subjects = () => {
     tutorialHours: 0,
     practicalHours: 0,
     elective: false,
-    isFullClassLab: false
+    subjectCategory: 'Compulsory Subject',
+    isFullClassLab: false,
+    program: 'UG'
   });
 
   useEffect(() => {
-    fetchSubjects();
-  }, []);
+    fetchSubjects(activeProgram);
+  }, [activeProgram]);
 
-  const fetchSubjects = async () => {
+  const fetchSubjects = async (prog = activeProgram) => {
+    setLoading(true);
     try {
-      const res = await api.get('/subjects');
+      const res = await api.get('/subjects', { params: { program: prog } });
       setSubjects(res.data.data || []);
     } catch (err) {
       console.error('Error fetching subjects', err);
@@ -55,12 +66,24 @@ const Subjects = () => {
     }
   };
 
+  const handleProgramChange = (prog) => {
+    if (prog === activeProgram) return;
+    setActiveProgram(prog);
+    if (prog === 'PG') {
+      setSelectedSemFilter('1');
+    } else {
+      setSelectedSemFilter('All');
+    }
+    setSelectedDeptFilter('All');
+    setSearchTerm('');
+  };
+
   const handleAddClick = () => {
     setEditingSubject(null);
     setFormData({
       subjectName: '',
       subjectCode: '',
-      semester: 1,
+      semester: activeProgram === 'PG' ? (selectedSemFilter !== 'All' ? Number(selectedSemFilter) : 1) : 1,
       department: 'CSE',
       branch: 'CSE',
       subjectType: 'theory',
@@ -69,13 +92,16 @@ const Subjects = () => {
       tutorialHours: 0,
       practicalHours: 0,
       elective: false,
-      isFullClassLab: false
+      subjectCategory: 'Compulsory Subject',
+      isFullClassLab: false,
+      program: activeProgram
     });
     setIsModalOpen(true);
   };
 
   const handleEditClick = (sub) => {
     setEditingSubject(sub);
+    const resolvedCategory = sub.subjectCategory || (sub.elective ? 'Elective 1' : 'Compulsory Subject');
     setFormData({
       subjectName: sub.subjectName || '',
       subjectCode: sub.subjectCode || '',
@@ -87,8 +113,10 @@ const Subjects = () => {
       lectureHours: sub.lectureHours || 0,
       tutorialHours: sub.tutorialHours || 0,
       practicalHours: sub.practicalHours || 0,
-      elective: Boolean(sub.elective),
-      isFullClassLab: Boolean(sub.isFullClassLab)
+      elective: resolvedCategory !== 'Compulsory Subject',
+      subjectCategory: resolvedCategory,
+      isFullClassLab: Boolean(sub.isFullClassLab),
+      program: sub.program || activeProgram
     });
     setIsModalOpen(true);
   };
@@ -106,6 +134,14 @@ const Subjects = () => {
     }
   };
 
+  const handleCategoryChange = (category) => {
+    setFormData(prev => ({
+      ...prev,
+      subjectCategory: category,
+      elective: category !== 'Compulsory Subject'
+    }));
+  };
+
   const handleTypeChange = (newType) => {
     setFormData(prev => {
       let l = prev.lectureHours;
@@ -117,10 +153,12 @@ const Subjects = () => {
         if (l === 0) l = 3;
         p = 0;
       }
+      const isElec = newType === 'elective';
       return {
         ...prev,
         subjectType: newType,
-        elective: newType === 'elective' ? true : prev.elective,
+        subjectCategory: isElec && prev.subjectCategory === 'Compulsory Subject' ? 'Elective 1' : prev.subjectCategory,
+        elective: isElec ? true : prev.elective,
         lectureHours: l,
         practicalHours: p
       };
@@ -135,6 +173,7 @@ const Subjects = () => {
 
     setSubmitting(true);
     try {
+      const isElective = formData.subjectCategory && formData.subjectCategory !== 'Compulsory Subject';
       const payload = {
         subjectName: formData.subjectName.trim(),
         subjectCode: formData.subjectCode.trim().toUpperCase(),
@@ -146,8 +185,10 @@ const Subjects = () => {
         lectureHours: Number(formData.lectureHours) || 0,
         tutorialHours: Number(formData.tutorialHours) || 0,
         practicalHours: Number(formData.practicalHours) || 0,
-        elective: Boolean(formData.elective),
-        isFullClassLab: Boolean(formData.isFullClassLab)
+        subjectCategory: formData.subjectCategory || (isElective ? 'Elective 1' : 'Compulsory Subject'),
+        elective: Boolean(isElective),
+        isFullClassLab: Boolean(formData.isFullClassLab),
+        program: editingSubject?.program || formData.program || activeProgram
       };
 
       if (editingSubject) {
@@ -186,12 +227,45 @@ const Subjects = () => {
 
   return (
     <div className="space-y-6">
-      {/* Header with Title and Add Subject Button */}
+      {/* Header with Title and Add Subject Button, plus UG/PG Toggle at Top-Left */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Subjects Management</h1>
-          <p className="text-xs text-gray-500 mt-1">Configure subjects, syllabus credit allocations, and departmental hours.</p>
+        <div className="flex flex-col sm:flex-row sm:items-center gap-4">
+          {/* UG / PG Toggle at top-left corner */}
+          <div className="inline-flex p-1 bg-gray-100 rounded-xl border border-gray-200 self-start shadow-xs">
+            <button
+              type="button"
+              onClick={() => handleProgramChange('UG')}
+              className={`px-4 py-1.5 rounded-lg text-xs font-black transition-all ${
+                activeProgram === 'UG'
+                  ? 'bg-blue-600 text-white shadow-xs'
+                  : 'text-gray-600 hover:text-gray-900'
+              }`}
+            >
+              UG
+            </button>
+            <button
+              type="button"
+              onClick={() => handleProgramChange('PG')}
+              className={`px-4 py-1.5 rounded-lg text-xs font-black transition-all ${
+                activeProgram === 'PG'
+                  ? 'bg-blue-600 text-white shadow-xs'
+                  : 'text-gray-600 hover:text-gray-900'
+              }`}
+            >
+              PG
+            </button>
+          </div>
+
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900">
+              {activeProgram === 'UG' ? 'Subjects Management' : 'PG Subjects Management'}
+            </h1>
+            <p className="text-xs text-gray-500 mt-1">
+              Configure {activeProgram} subjects, syllabus credit allocations, and departmental hours.
+            </p>
+          </div>
         </div>
+
         <button 
           onClick={handleAddClick}
           className="flex items-center justify-center px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold text-xs shadow-sm shadow-blue-200 transition-colors"
@@ -209,7 +283,7 @@ const Subjects = () => {
           <FiSearch className="text-gray-400 mr-2" size={18} />
           <input
             type="text"
-            placeholder="Search subjects by code, name, or department..."
+            placeholder={`Search ${activeProgram} subjects by code, name, or department...`}
             className="w-full bg-transparent focus:outline-none text-sm font-medium text-gray-800"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
@@ -219,22 +293,41 @@ const Subjects = () => {
         {/* Filters Row: Semesters & Departments */}
         <div className="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-gray-100">
           {/* Semester Pills */}
-          <div className="flex flex-wrap items-center gap-1.5">
-            <span className="text-xs font-bold text-gray-400 mr-1">Semester:</span>
-            {['All', 1, 2, 3, 4, 5, 6, 7, 8].map(sem => (
-              <button
-                key={sem}
-                onClick={() => setSelectedSemFilter(sem.toString())}
-                className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all ${
-                  selectedSemFilter === sem.toString()
-                    ? 'bg-blue-600 text-white shadow-xs'
-                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                }`}
-              >
-                {sem === 'All' ? 'All Sems' : `S${sem}`}
-              </button>
-            ))}
-          </div>
+          {activeProgram === 'UG' ? (
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span className="text-xs font-bold text-gray-400 mr-1">Semester:</span>
+              {['All', 1, 2, 3, 4, 5, 6, 7, 8].map(sem => (
+                <button
+                  key={sem}
+                  onClick={() => setSelectedSemFilter(sem.toString())}
+                  className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all ${
+                    selectedSemFilter === sem.toString()
+                      ? 'bg-blue-600 text-white shadow-xs'
+                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                  }`}
+                >
+                  {sem === 'All' ? 'All Sems' : `S${sem}`}
+                </button>
+              ))}
+            </div>
+          ) : (
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-xs font-bold text-gray-400 mr-1">Semester:</span>
+              {[1, 2, 3, 4].map(sem => (
+                <button
+                  key={sem}
+                  onClick={() => setSelectedSemFilter(sem.toString())}
+                  className={`px-3 py-1 rounded-lg text-xs font-bold transition-all ${
+                    selectedSemFilter === sem.toString()
+                      ? 'bg-blue-600 text-white shadow-xs'
+                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                  }`}
+                >
+                  Sem {sem}
+                </button>
+              ))}
+            </div>
+          )}
 
           {/* Department Filter */}
           <div className="flex items-center gap-2">
@@ -292,9 +385,9 @@ const Subjects = () => {
                         <div>
                           <div className="font-bold text-gray-900 text-sm flex items-center gap-2">
                             {sub.subjectName}
-                            {sub.elective && (
-                              <span className="bg-amber-100 text-amber-700 text-[10px] font-extrabold px-1.5 py-0.5 rounded">
-                                ELECTIVE
+                            {((sub.subjectCategory && sub.subjectCategory !== 'Compulsory Subject') || sub.elective) && (
+                              <span className="bg-amber-100 text-amber-800 text-[10px] font-extrabold px-1.5 py-0.5 rounded uppercase tracking-wide">
+                                {sub.subjectCategory && sub.subjectCategory !== 'Compulsory Subject' ? sub.subjectCategory : 'ELECTIVE 1'}
                               </span>
                             )}
                             {sub.isFullClassLab && (
@@ -439,7 +532,7 @@ const Subjects = () => {
                     value={formData.semester}
                     onChange={(e) => setFormData({ ...formData, semester: Number(e.target.value) })}
                   >
-                    {[1, 2, 3, 4, 5, 6, 7, 8].map(s => (
+                    {(activeProgram === 'PG' ? [1, 2, 3, 4] : [1, 2, 3, 4, 5, 6, 7, 8]).map(s => (
                       <option key={s} value={s}>Semester {s}</option>
                     ))}
                   </select>
@@ -519,17 +612,29 @@ const Subjects = () => {
                 </div>
               </div>
 
-              {/* Additional Options */}
-              <div className="pt-2 space-y-2 border-t border-gray-100">
-                <label className="flex items-center gap-2.5 cursor-pointer select-none">
-                  <input
-                    type="checkbox"
-                    checked={formData.elective}
-                    onChange={(e) => setFormData({ ...formData, elective: e.target.checked })}
-                    className="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500"
-                  />
-                  <span className="text-xs font-bold text-gray-700">Elective Subject (Multiple options per student pool)</span>
+              {/* Subject Category Dropdown */}
+              <div className="pt-2 border-t border-gray-100">
+                <label className="block text-xs font-bold text-gray-700 mb-1.5">
+                  Subject Category
                 </label>
+                <select
+                  value={formData.subjectCategory || 'Compulsory Subject'}
+                  onChange={(e) => handleCategoryChange(e.target.value)}
+                  className="w-full p-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm font-semibold text-gray-800 outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white transition-all cursor-pointer"
+                >
+                  {Array.from(new Set([...SUBJECT_CATEGORIES, formData.subjectCategory].filter(Boolean))).map((cat) => (
+                    <option key={cat} value={cat}>
+                      {cat}
+                    </option>
+                  ))}
+                </select>
+                <p className="text-[11px] text-gray-400 mt-1">
+                  Subjects in the same elective group are scheduled simultaneously at non-overlapping slots.
+                </p>
+              </div>
+
+              {/* Additional Options */}
+              <div className="pt-1 space-y-2">
 
                 {formData.subjectType === 'lab' && (
                   <label className="flex items-center gap-2.5 cursor-pointer select-none">

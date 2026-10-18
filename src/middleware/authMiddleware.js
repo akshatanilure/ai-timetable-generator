@@ -19,18 +19,23 @@ exports.protect = async (req, res, next) => {
       // Get user from the token
       req.user = await User.findById(decoded.id).select('-password');
 
+      if (!req.user) {
+        return res.status(401).json({
+          success: false,
+          error: 'Not authorized, user not found',
+        });
+      }
+
       next();
     } catch (error) {
       console.error(error);
-      res.status(401).json({
+      return res.status(401).json({
         success: false,
         error: 'Not authorized, token failed',
       });
     }
-  }
-
-  if (!token) {
-    res.status(401).json({
+  } else {
+    return res.status(401).json({
       success: false,
       error: 'Not authorized, no token',
     });
@@ -40,10 +45,10 @@ exports.protect = async (req, res, next) => {
 // Grant access to specific roles
 exports.authorize = (...roles) => {
   return (req, res, next) => {
-    if (!roles.includes(req.user.role)) {
+    if (!req.user || !roles.includes(req.user.role)) {
       return res.status(403).json({
         success: false,
-        error: `User role ${req.user.role} is not authorized to access this route`,
+        error: `User role ${req.user ? req.user.role : 'unauthenticated'} is not authorized to access this route`,
       });
     }
     next();

@@ -9,21 +9,29 @@ import {
   FiSettings,
   FiBox,
   FiUser,
-  FiCpu
+  FiCpu,
+  FiSliders
 } from 'react-icons/fi';
 
 const Sidebar = ({ isOpen }) => {
   const { user } = useAuth();
 
+  const getDashboardPath = () => {
+    if (user?.role === 'admin') return '/admin/dashboard';
+    if (user?.role === 'teacher') return '/teacher/dashboard';
+    if (user?.role === 'student') return '/student/dashboard';
+    return '/dashboard';
+  };
+
   const links = [
-    { name: 'Dashboard', path: '/', icon: <FiHome />, roles: ['admin', 'teacher', 'student'] },
-    { name: 'My Schedule', path: '/my-schedule', icon: <FiUser />, roles: ['teacher', 'admin'] },
-    { name: 'Class Schedules', path: '/', icon: <FiCalendar />, roles: ['student'] },
-    { name: 'Timetables', path: '/timetables', icon: <FiCalendar />, roles: ['admin', 'teacher'] },
+    { name: 'Dashboard', path: getDashboardPath(), icon: <FiHome />, roles: ['admin', 'teacher', 'student'] },
+    { name: 'My Schedule', path: '/my-schedule', icon: <FiUser />, roles: ['teacher'] },
+    { name: 'Timetables', path: '/timetables', icon: <FiCalendar />, roles: ['admin', 'teacher', 'student'] },
     { name: 'AI Generator', path: '/generate-timetable', icon: <FiCpu />, roles: ['admin'] },
     { name: 'Teachers', path: '/teachers', icon: <FiUsers />, roles: ['admin'] },
     { name: 'Subjects', path: '/subjects', icon: <FiBook />, roles: ['admin'] },
     { name: 'Rooms & Labs', path: '/infrastructure', icon: <FiBox />, roles: ['admin'] },
+    { name: 'Constraints', path: '/constraints', icon: <FiSliders />, roles: ['admin'] },
     { name: 'Settings', path: '/settings', icon: <FiSettings />, roles: ['admin', 'teacher'] },
   ];
 

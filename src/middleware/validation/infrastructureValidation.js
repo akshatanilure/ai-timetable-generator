@@ -4,6 +4,7 @@ exports.validateRoom = [
   body('roomNumber').notEmpty().withMessage('Room number is required'),
   body('capacity').isNumeric().withMessage('Capacity must be a number'),
   body('roomType').isIn(['lecture', 'seminar', 'tutorial']).withMessage('Invalid room type'),
+  body('program').optional().isIn(['UG', 'PG']).withMessage('Program must be either UG or PG'),
   (req, res, next) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
@@ -17,7 +18,8 @@ exports.validateLab = [
   body('labName').notEmpty().withMessage('Lab name is required'),
   body('labType').notEmpty().withMessage('Lab type is required'),
   body('capacity').isNumeric().withMessage('Capacity must be a number'),
-  body('supportedSubjects').isArray().withMessage('Supported subjects must be an array'),
+  body('supportedSubjects').optional().isArray().withMessage('Supported subjects must be an array'),
+  body('program').optional().isIn(['UG', 'PG']).withMessage('Program must be either UG or PG'),
   (req, res, next) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {

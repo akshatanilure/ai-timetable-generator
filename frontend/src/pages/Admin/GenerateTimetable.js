@@ -127,15 +127,6 @@ const GenerateTimetable = () => {
       });
       setProgress(100);
       setResult(res.data);
-      
-      // Automatically save to database
-      if (res.data && res.data.data && res.data.data.rawSchedules) {
-        await api.post('/timetables/save-ml', {
-          semester: config.semester,
-          branch: config.branch,
-          rawSchedules: res.data.data.rawSchedules
-        });
-      }
     } catch (err) {
       alert(err.response?.data?.error || err.response?.data?.details || 'Generation failed');
     } finally {
