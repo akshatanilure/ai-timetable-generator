@@ -36,7 +36,7 @@ const Sidebar = ({ isOpen }) => {
   ];
 
   return (
-    <div className={`${isOpen ? 'translate-x-0' : '-translate-x-full'} fixed inset-y-0 left-0 z-30 w-64 bg-secondary text-white transition duration-300 transform lg:translate-x-0 lg:static lg:inset-0 print:hidden`}>
+    <div className={`${isOpen ? 'translate-x-0' : '-translate-x-full'} fixed inset-y-0 left-0 z-30 w-64 bg-white border-r border-gray-200 text-slate-800 transition duration-300 transform lg:translate-x-0 lg:static lg:inset-0 print:hidden`}>
       <div className="flex items-center justify-center mt-8 px-6">
         <span className="text-2xl font-black tracking-wider text-slate-900">
           <span className="text-indigo-600">AI</span> TIMETABLE
@@ -49,13 +49,15 @@ const Sidebar = ({ isOpen }) => {
             key={link.path}
             to={link.path}
             className={({ isActive }) => 
-              `flex items-center px-4 py-3 mb-2 transition-colors duration-200 rounded-lg ${
-                isActive ? 'bg-primary text-white' : 'text-gray-400 hover:bg-gray-800 hover:text-white'
+              `flex items-center px-4 py-3 mb-2 transition-all duration-200 rounded-xl ${
+                isActive 
+                  ? 'bg-indigo-600 text-white shadow-sm shadow-indigo-500/25 font-semibold' 
+                  : 'text-slate-600 hover:bg-indigo-50/80 hover:text-indigo-600 font-medium'
               }`
             }
           >
-            <span className="mr-3">{link.icon}</span>
-            <span className="text-sm font-medium">{link.name}</span>
+            <span className="mr-3 text-lg">{link.icon}</span>
+            <span className="text-sm">{link.name}</span>
           </NavLink>
         ))}
       </nav>
