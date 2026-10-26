@@ -23,11 +23,50 @@ class GenerationRequest(BaseModel):
     timetableRules: Optional[Dict[str, Any]] = None
     program: Optional[str] = "UG"
     startTime: Optional[str] = None
+    inMemoryTimetables: Optional[List[Dict[str, Any]]] = None
 
 DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
 SLOTS = ["08:00", "09:00", "10:30", "11:30", "12:30", "14:30", "15:30"]
 
 MAX_DAILY_WORKING_HOURS = 5
+
+def normalize_room_identifier(val):
+    if not val:
+        return ""
+    s = str(val).lower()
+    for word in ['room', 'hall']:
+        s = s.replace(word, '')
+    return s.replace('-', '').replace('_', '').replace(' ', '').strip()
+
+def match_room_for_division(d, rooms, idx=0):
+    assigned = d.get('assignedRoom') or d.get('rawRoomNumber')
+    room_id = d.get('roomId')
+    matched = None
+    if room_id:
+        matched = next((r for r in rooms if str(r.get('_id')) == str(room_id)), None)
+    if not matched and assigned:
+        norm_assigned = normalize_room_identifier(assigned)
+        matched = next((r for r in rooms if normalize_room_identifier(r.get('roomNumber', '')) == norm_assigned), None)
+        if not matched and 'seminar' in norm_assigned:
+            matched = next((r for r in rooms if 'seminar' in normalize_room_identifier(r.get('roomNumber', ''))), None)
+    if not matched and rooms:
+        div_str = d.get('strength', 60)
+        suitable = [r for r in rooms if r.get('capacity', 60) >= div_str]
+        if suitable:
+            matched = suitable[idx % len(suitable)]
+    return matched
+
+def format_room_display_name(rm):
+    if not rm:
+        return "No Room Assigned"
+    rm_num = str(rm.get('roomNumber', '')).strip()
+    if not rm_num:
+        return "No Room Assigned"
+    if 'seminar' in rm_num.lower():
+        return "CSE Seminar Hall"
+    if rm_num.lower().startswith('room') or rm_num.upper().startswith('pg') or rm_num.upper().startswith('r'):
+        return rm_num
+    return f"Room {rm_num}"
 
 THEORY_END_TIMES = {
     0: "09:00",
@@ -93,17 +132,7 @@ def create_individual(sessions, teachers, faculty_mapping, rooms, fixed_timings,
     div_room_map = {}
     for idx, d in enumerate(div_info_list):
         d_name = d.get('name', f'DIV-{idx}')
-        assigned = d.get('assignedRoom') or d.get('rawRoomNumber')
-        room_id = d.get('roomId')
-        matched = None
-        if room_id:
-            matched = next((r for r in rooms if str(r.get('_id')) == str(room_id)), None)
-        if not matched and assigned:
-            clean = str(assigned).replace('Room', '').strip().lower()
-            matched = next((r for r in rooms if str(r.get('roomNumber', '')).strip().lower() == clean), None)
-        if not matched and rooms:
-            matched = rooms[idx % len(rooms)]
-        div_room_map[d_name] = matched
+        div_room_map[d_name] = match_room_for_division(d, rooms, idx)
     
     full_days_per_div = {}
     for div in div_names:
@@ -539,7 +568,44 @@ def pack_individual(individual, global_start_idx=0, semester=1, start_time=None)
             
     return individual
 
-def calculate_fitness(individual, teachers, faculty_max_workloads, global_start_idx=0, semester=1, start_time=None):
+def extract_in_memory_bookings(in_memory_timetables):
+    booked_rooms = set()
+    booked_teachers = set()
+    if not in_memory_timetables or not isinstance(in_memory_timetables, list):
+        return {"rooms": booked_rooms, "teachers": booked_teachers}
+
+    for mem in in_memory_timetables:
+        raw = mem.get('rawSchedules')
+        if not raw or not isinstance(raw, dict):
+            continue
+        for div_name, sched in raw.items():
+            if not isinstance(sched, list):
+                continue
+            for entry in sched:
+                day = entry.get('day')
+                start_time = entry.get('startTime')
+                if not day or not start_time or start_time not in SLOTS:
+                    continue
+                slot_idx = SLOTS.index(start_time)
+                
+                rm = entry.get('room')
+                if rm and isinstance(rm, dict):
+                    r_id = str(rm.get('_id') or rm.get('roomNumber') or '')
+                    if r_id:
+                        booked_rooms.add((day, slot_idx, normalize_room_identifier(r_id)))
+                
+                fac_list = entry.get('faculty')
+                if fac_list:
+                    facs = fac_list if isinstance(fac_list, list) else [fac_list]
+                    for fac in facs:
+                        if isinstance(fac, dict):
+                            f_id = str(fac.get('_id') or fac.get('id') or '')
+                            if f_id:
+                                booked_teachers.add((day, slot_idx, f_id))
+
+    return {"rooms": booked_rooms, "teachers": booked_teachers}
+
+def calculate_fitness(individual, teachers, faculty_max_workloads, global_start_idx=0, semester=1, start_time=None, in_memory_bookings=None):
     global_start_idx, allowed_theory_indices, valid_lab_start_indices, saturday_valid_indices = get_semester_timing_config(semester, start_time)
     pack_individual(individual, global_start_idx, semester, start_time)
     conflicts = 0
@@ -607,15 +673,19 @@ def calculate_fitness(individual, teachers, faculty_max_workloads, global_start_
                                 if t_id not in faculty_time: faculty_time[t_id] = set()
                                 if slot_key in faculty_time[t_id]: conflicts += 5000
                                 faculty_time[t_id].add(slot_key)
+                                if in_memory_bookings and (day, slot_idx + i, t_id) in in_memory_bookings.get('teachers', set()):
+                                    conflicts += 20000
             for rm in (entry['room'] if isinstance(entry['room'], list) else [entry['room']]):
                 if rm and isinstance(rm, dict):
-                    r_id = str(rm.get('_id') or rm.get('id') or 'unknown')
-                    if r_id != 'unknown':
+                    r_id = str(rm.get('_id') or rm.get('id') or rm.get('roomNumber') or '')
+                    if r_id:
                         for i in range(duration):
                             slot_key = f"{day}_{slot_idx + i}"
                             if r_id not in room_time: room_time[r_id] = set()
-                            if slot_key in room_time[r_id]: conflicts += 5000
+                            if slot_key in room_time[r_id]: conflicts += 10000
                             room_time[r_id].add(slot_key)
+                            if in_memory_bookings and (day, slot_idx + i, normalize_room_identifier(r_id)) in in_memory_bookings.get('rooms', set()):
+                                conflicts += 30000
         else:
             faculties = entry['teacher'] if isinstance(entry['teacher'], list) else [entry['teacher']]
             rooms_assigned = entry['room'] if isinstance(entry['room'], list) else [entry['room']]
@@ -631,15 +701,19 @@ def calculate_fitness(individual, teachers, faculty_max_workloads, global_start_
                         t_id = str(fac.get('_id') or fac.get('id') or 'unknown')
                         if t_id != 'unknown':
                             if t_id not in faculty_time: faculty_time[t_id] = set()
-                            if slot_key in faculty_time[t_id]: conflicts += 1000
+                            if slot_key in faculty_time[t_id]: conflicts += 2000
                             faculty_time[t_id].add(slot_key)
+                            if in_memory_bookings and (day, slot_idx + i, t_id) in in_memory_bookings.get('teachers', set()):
+                                conflicts += 20000
                 for rm in rooms_assigned:
                     if rm and isinstance(rm, dict):
-                        r_id = str(rm.get('_id') or rm.get('id') or 'unknown')
-                        if r_id != 'unknown':
+                        r_id = str(rm.get('_id') or rm.get('id') or rm.get('roomNumber') or '')
+                        if r_id:
                             if r_id not in room_time: room_time[r_id] = set()
-                            if slot_key in room_time[r_id]: conflicts += 1000
+                            if slot_key in room_time[r_id]: conflicts += 20000
                             room_time[r_id].add(slot_key)
+                            if in_memory_bookings and (day, slot_idx + i, normalize_room_identifier(r_id)) in in_memory_bookings.get('rooms', set()):
+                                conflicts += 30000
                 
     for div, days in day_slots.items():
         for day, slots in days.items():
@@ -696,7 +770,7 @@ def mutate(individual, teachers, rooms, global_start_idx=0, mutation_rate=0.1, s
             
     return individual
 
-def run_genetic_algorithm(sessions, teachers, faculty_mapping, rooms, fixed_timings, faculty_max_workloads, global_start_idx=0, semester=1, entry_mode="dynamic", divisions_info=None, start_time=None):
+def run_genetic_algorithm(sessions, teachers, faculty_mapping, rooms, fixed_timings, faculty_max_workloads, global_start_idx=0, semester=1, entry_mode="dynamic", divisions_info=None, start_time=None, in_memory_bookings=None):
     POPULATION_SIZE = 100 
     GENERATIONS = 300
 
@@ -705,24 +779,14 @@ def run_genetic_algorithm(sessions, teachers, faculty_mapping, rooms, fixed_timi
     div_room_map = {}
     for idx, d in enumerate(div_info_list):
         d_name = d.get('name', f'DIV-{idx}')
-        assigned = d.get('assignedRoom') or d.get('rawRoomNumber')
-        room_id = d.get('roomId')
-        matched = None
-        if room_id:
-            matched = next((r for r in rooms if str(r.get('_id')) == str(room_id)), None)
-        if not matched and assigned:
-            clean = str(assigned).replace('Room', '').strip().lower()
-            matched = next((r for r in rooms if str(r.get('roomNumber', '')).strip().lower() == clean), None)
-        if not matched and rooms:
-            matched = rooms[idx % len(rooms)]
-        div_room_map[d_name] = matched
+        div_room_map[d_name] = match_room_for_division(d, rooms, idx)
 
     population = [create_individual(sessions, teachers, faculty_mapping, rooms, fixed_timings, global_start_idx, semester, entry_mode, divisions_info, start_time) for _ in range(POPULATION_SIZE)]
     best_individual = None
     best_fitness = float('inf')
     for generation in range(GENERATIONS):
-        population.sort(key=lambda x: calculate_fitness(x, teachers, faculty_max_workloads, global_start_idx, semester, start_time))
-        current_best = calculate_fitness(population[0], teachers, faculty_max_workloads, global_start_idx, semester, start_time)
+        population.sort(key=lambda x: calculate_fitness(x, teachers, faculty_max_workloads, global_start_idx, semester, start_time, in_memory_bookings))
+        current_best = calculate_fitness(population[0], teachers, faculty_max_workloads, global_start_idx, semester, start_time, in_memory_bookings)
         if current_best < best_fitness:
             best_individual = copy_individual(population[0])
             best_fitness = current_best
@@ -786,12 +850,13 @@ def generate_timetable(request: GenerationRequest):
             })
             
         # 2. Regular Rotational Parallel Labs
+        div_letter = 'B' if 'B' in str(div_name).upper() else 'A'
         if regular_labs:
             is_pg = (getattr(request, 'program', 'UG') or 'UG').upper() == 'PG' and request.semester in [1, 2, 3, 4]
             
             if is_pg:
                 # PG Semesters 1-4: exactly ONE lab batch
-                batch_name = "Batch A1"
+                batch_name = f"Batch {div_letter}1"
                 for idx, lab_sub in enumerate(regular_labs):
                     phys_lab = request.labsConfig[idx % len(request.labsConfig)] if request.labsConfig else {"id": idx+1, "name": f"Lab {idx+1}", "capacity": 30}
                     group_sessions = [{
@@ -815,7 +880,7 @@ def generate_timetable(request: GenerationRequest):
             elif request.semester in [3, 4, 5, 6] and len(regular_labs) == 3:
                 # Sort labs deterministically
                 sorted_labs = sorted(regular_labs, key=lambda s: str(s.get('subjectCode') or s.get('subjectName') or s.get('_id')))
-                batches = ["A1", "A2", "A3"]
+                batches = [f"{div_letter}1", f"{div_letter}2", f"{div_letter}3"]
                 
                 # 3 parallel slots, each running all 3 labs with different batches:
                 # Slot 1 -> A1: Lab1, A2: Lab2, A3: Lab3
@@ -848,7 +913,7 @@ def generate_timetable(request: GenerationRequest):
                 # When only 1 regular lab exists (e.g. Sem 7 22UCSL701):
                 # Assign each batch to a separate slot so the same lab is never assigned to multiple batches at once
                 lab_sub = regular_labs[0]
-                batches = ["A1", "A2", "A3"] if request.semester in [3, 4, 5, 6, 7] else [f"Batch A{i+1}" for i in range(2)]
+                batches = [f"{div_letter}1", f"{div_letter}2", f"{div_letter}3"] if request.semester in [3, 4, 5, 6, 7] else [f"Batch {div_letter}{i+1}" for i in range(2)]
                 for b_idx, b_name in enumerate(batches):
                     phys_lab = request.labsConfig[0] if request.labsConfig else {"id": 1, "name": "Lab 1", "capacity": 30}
                     group_sessions = [{
@@ -876,7 +941,7 @@ def generate_timetable(request: GenerationRequest):
                         num_batches = 2
                 else:
                     num_batches = 2
-                batches = [f"Batch A{i+1}" for i in range(num_batches)]
+                batches = [f"Batch {div_letter}{i+1}" for i in range(num_batches)]
                 
                 num_blocks = max(len(regular_labs), num_batches)
                 for block_idx in range(num_blocks):
@@ -958,10 +1023,11 @@ def generate_timetable(request: GenerationRequest):
         req_start_time = request.timetableRules.get('college_start_time')
 
     global_start_idx, allowed_theory_indices, valid_lab_start_indices, saturday_valid_indices = get_semester_timing_config(request.semester, req_start_time)
-                    
-    best_individual = run_genetic_algorithm(sessions, request.teachers, request.facultyMapping, request.rooms, request.fixedTimings, request.facultyMaxWorkloads, global_start_idx, request.semester, request.entryMode, divs, req_start_time)
+    
+    in_mem_bookings = extract_in_memory_bookings(request.inMemoryTimetables)
+    best_individual = run_genetic_algorithm(sessions, request.teachers, request.facultyMapping, request.rooms, request.fixedTimings, request.facultyMaxWorkloads, global_start_idx, request.semester, request.entryMode, divs, req_start_time, in_mem_bookings)
     pack_individual(best_individual, global_start_idx, request.semester, req_start_time)
-    best_fitness = calculate_fitness(best_individual, request.teachers, request.facultyMaxWorkloads, global_start_idx, request.semester, req_start_time)
+    best_fitness = calculate_fitness(best_individual, request.teachers, request.facultyMaxWorkloads, global_start_idx, request.semester, req_start_time, in_mem_bookings)
     
     matrix = {}
     raw_schedules = {div['name']: [] for div in divs}
@@ -969,25 +1035,15 @@ def generate_timetable(request: GenerationRequest):
     div_room_map = {}
     for idx, d in enumerate(divs):
         d_name = d.get('name', f'DIV-{idx}')
-        assigned = d.get('assignedRoom') or d.get('rawRoomNumber')
-        room_id = d.get('roomId')
-        matched = None
-        if room_id:
-            matched = next((r for r in request.rooms if str(r.get('_id')) == str(room_id)), None)
-        if not matched and assigned:
-            clean = str(assigned).replace('Room', '').strip().lower()
-            matched = next((r for r in request.rooms if str(r.get('roomNumber', '')).strip().lower() == clean), None)
-        if not matched and request.rooms:
-            matched = request.rooms[idx % len(request.rooms)]
-        div_room_map[d_name] = matched
+        div_room_map[d_name] = match_room_for_division(d, request.rooms, idx)
     
     for div in divs:
         matched_rm = div_room_map.get(div['name'])
-        rm_num = matched_rm.get('roomNumber') if matched_rm else ''
+        display_rm = div.get('assignedRoom') or format_room_display_name(matched_rm)
         matrix[div['name']] = {
             "divisionName": div['name'],
             "strength": div.get('strength', 60),
-            "assignedRoom": div.get('assignedRoom') or (f"Room {rm_num}" if rm_num and not rm_num.startswith('R') and not rm_num.startswith('PG') else (rm_num or 'Room 101')),
+            "assignedRoom": display_rm,
             "roomCapacity": div.get('roomCapacity') or (matched_rm.get('capacity', 60) if matched_rm else 60),
             "semester": request.subjects[0].get("semester", 1) if request.subjects else 1,
             "collegeStartTime": "08:00" if global_start_idx == 0 else "09:00",

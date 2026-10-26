@@ -81,21 +81,32 @@ const TimetableGrid = ({ schedule, timetable }) => {
     Monday: 0, Tuesday: 0, Wednesday: 0, Thursday: 0, Friday: 0, Saturday: 0
   };
 
+  const rawRoom = timetable?.division?.assignedRoom || timetable?.settings?.assignedRoom || timetable?.roomAllocations?.assignedRoom || timetable?.assignedRoom || schedule?.find(e => e?.room?.roomNumber && e?.type !== 'lab')?.room?.roomNumber;
+  const displayRoom = rawRoom ? (
+    String(rawRoom).toLowerCase().includes('seminar') ? 'CSE Seminar Hall' :
+    (String(rawRoom).startsWith('Room') || String(rawRoom).startsWith('PG') || String(rawRoom).startsWith('R') ? String(rawRoom) : `Room ${rawRoom}`)
+  ) : null;
+
   return (
     <div className="flex flex-col gap-4">
       {timetable && (
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-gradient-to-r from-indigo-50/90 via-purple-50/50 to-white p-3.5 rounded-xl border border-indigo-100 shadow-2xs">
           {/* Left Corner Division, Student Count & Room */}
-          <div className="flex items-center gap-2.5">
+          <div className="flex items-center gap-2.5 flex-wrap">
             <span className="bg-gradient-to-r from-indigo-700 to-indigo-900 text-white font-extrabold text-xs px-3 py-1 rounded-lg shadow-2xs">
               Division: {timetable.division?.divisionName || 'DIV-A'}
             </span>
             <span className="bg-white text-indigo-900 font-bold text-xs px-2.5 py-0.5 rounded-full border border-indigo-200 shadow-2xs">
               👥 {timetable.division?.strength || 60} Students
             </span>
-            {timetable.division?.assignedRoom && (
-              <span className="text-xs font-semibold text-gray-700">
-                🏢 Room: <strong className="text-indigo-950 font-bold">{timetable.division.assignedRoom}</strong>
+            {displayRoom && displayRoom !== 'No Room Assigned' ? (
+              <span className="text-xs font-bold text-indigo-950 bg-amber-100/90 border border-amber-300 px-3 py-1 rounded-lg shadow-2xs flex items-center gap-1.5">
+                <span>🏢 Assigned Room:</span>
+                <span className="font-black text-indigo-950">{displayRoom}</span>
+              </span>
+            ) : (
+              <span className="text-xs font-bold text-amber-900 bg-amber-100 border border-amber-300 px-3 py-1 rounded-lg shadow-2xs flex items-center gap-1.5">
+                <span>⚠️ No Room Assigned</span>
               </span>
             )}
             <span className="text-[10px] font-extrabold text-purple-700 bg-purple-100/70 px-2 py-0.5 rounded-full border border-purple-200">
@@ -113,13 +124,22 @@ const TimetableGrid = ({ schedule, timetable }) => {
         <table className="w-full border-collapse border border-gray-400 text-sm timetable-grid-table">
           <thead>
             <tr className="bg-gray-100">
-              <th className="border border-gray-400 p-2 w-28 bg-indigo-50/80 text-center">
-                <div className="flex flex-col items-center">
+              <th className="border border-gray-400 p-2 w-32 bg-indigo-50/80 text-center">
+                <div className="flex flex-col items-center gap-1">
                   <span className="text-xs font-black text-indigo-950">
                     {timetable?.division?.divisionName || 'Division'}
                   </span>
+                  {displayRoom && displayRoom !== 'No Room Assigned' ? (
+                    <span className="text-[10px] font-black text-indigo-950 bg-amber-100/90 border border-amber-300 px-1.5 py-0.5 rounded shadow-2xs">
+                      🏢 {displayRoom}
+                    </span>
+                  ) : (
+                    <span className="text-[9px] font-bold text-amber-900 bg-amber-100 border border-amber-300 px-1.5 py-0.5 rounded shadow-2xs">
+                      ⚠️ No Room
+                    </span>
+                  )}
                   {timetable?.division?.strength && (
-                    <span className="text-[10px] font-bold text-indigo-700 bg-white px-1.5 py-0.2 rounded border border-indigo-200 shadow-2xs my-0.5">
+                    <span className="text-[9px] font-bold text-gray-600 bg-white px-1.5 py-0.2 rounded border border-gray-200 shadow-2xs">
                       {timetable.division.strength} Students
                     </span>
                   )}

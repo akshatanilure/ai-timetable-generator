@@ -3,7 +3,7 @@ import api from '../services/api';
 import { 
   FiCpu, FiAlertCircle, FiCheckCircle, FiZap, FiSettings, 
   FiRefreshCw, FiActivity, FiUsers, FiClock,
-  FiBookOpen, FiList, FiDownload
+  FiBookOpen, FiList, FiDownload, FiAlertTriangle
 } from 'react-icons/fi';
 import Select from 'react-select';
 import html2pdf from 'html2pdf.js';
@@ -88,15 +88,125 @@ const GenerateTimetable = () => {
 
   const [allocatedClassroomsCount, setAllocatedClassroomsCount] = useState(1);
 
-  const autoAllocateDivisions = (strengthVal, customRoomsCount, customRooms) => {
-    const total = parseInt(strengthVal) !== undefined && !isNaN(parseInt(strengthVal)) ? parseInt(strengthVal) : (program === 'PG' ? 30 : 60);
+  const [roomAllocationWarnings, setRoomAllocationWarnings] = useState([]);
+
+  const normalizeRoom = (r) => {
+    if (!r) return '';
+    let s = String(r).toLowerCase();
+    for (const w of ['room', 'hall']) {
+      s = s.replace(w, '');
+    }
+    return s.replace(/[-_\s]/g, '').trim();
+  };
+
+  const formatRoomDisplay = (r) => {
+    if (!r) return 'No Room Assigned';
+    const str = String(r).trim();
+    if (str.toLowerCase().includes('seminar')) return 'CSE Seminar Hall';
+    if (str.toLowerCase().startsWith('room') || str.toUpperCase().startsWith('PG') || str.toUpperCase().startsWith('R')) return str;
+    return `Room ${str}`;
+  };
+
+  const autoAllocateRoomsAllSemesters = (targetSems, customRoomList = null, customAllDivs = null, progOverride = null) => {
+    const activeProg = progOverride || program || 'UG';
+    const sems = targetSems || getAllSemestersForCycle();
+    const roomList = customRoomList || rooms;
+    // Filter only lecture rooms configured in Infrastructure for this program
+    const lectureRooms = roomList.filter(r => r.roomType === 'lecture' || !r.roomType);
+
+    // Sort classrooms dynamically by natural order
+    lectureRooms.sort((a, b) => {
+      return String(a.roomNumber).localeCompare(String(b.roomNumber), undefined, { numeric: true, sensitivity: 'base' });
+    });
+
+    const usedRoomNorms = new Set();
+    const updatedAllDivs = { ...(customAllDivs || allDivisions) };
+    const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+    const newWarnings = [];
+
+    sems.forEach(sem => {
+      const existingDivs = updatedAllDivs[sem];
+      const numDivsNeeded = existingDivs && existingDivs.length > 0
+        ? existingDivs.length
+        : (activeProg === 'PG' ? 1 : 2);
+      const defaultStrength = activeProg === 'PG' ? 30 : 60;
+
+      const semDivs = [];
+      for (let i = 0; i < numDivsNeeded; i++) {
+        const divName = existingDivs && existingDivs[i]?.name ? existingDivs[i].name : `DIV-${alphabet[i]}`;
+        const divStrength = existingDivs && existingDivs[i]?.strength ? parseInt(existingDivs[i].strength, 10) : defaultStrength;
+        
+        // Find best room where capacity >= divStrength and not occupied in this cycle
+        const candidates = lectureRooms.filter(r => {
+          const norm = normalizeRoom(r.roomNumber);
+          return !usedRoomNorms.has(norm) && (r.capacity || 0) >= divStrength;
+        });
+
+        // Closest capacity fit first, then natural order
+        candidates.sort((a, b) => {
+          const diffA = (a.capacity || 0) - divStrength;
+          const diffB = (b.capacity || 0) - divStrength;
+          if (diffA !== diffB) return diffA - diffB;
+          return String(a.roomNumber).localeCompare(String(b.roomNumber), undefined, { numeric: true, sensitivity: 'base' });
+        });
+
+        const matched = candidates[0];
+        if (matched) {
+          usedRoomNorms.add(normalizeRoom(matched.roomNumber));
+          semDivs.push({
+            name: divName,
+            strength: divStrength,
+            assignedRoom: formatRoomDisplay(matched.roomNumber),
+            rawRoomNumber: matched.roomNumber,
+            roomId: matched._id || null,
+            roomCapacity: matched.capacity || divStrength,
+            roomWarning: null
+          });
+        } else {
+          // If no suitable room exists, do NOT invent fake rooms or assign occupied rooms
+          const warnText = `No available ${activeProg || 'UG'} classroom with capacity >= ${divStrength} found in Infrastructure for Sem ${sem} ${divName}.`;
+          semDivs.push({
+            name: divName,
+            strength: divStrength,
+            assignedRoom: null,
+            rawRoomNumber: null,
+            roomId: null,
+            roomCapacity: null,
+            roomWarning: warnText
+          });
+          newWarnings.push(warnText);
+        }
+      }
+
+      updatedAllDivs[sem] = semDivs;
+    });
+
+    setRoomAllocationWarnings(newWarnings);
+    setAllDivisions(prev => ({ ...prev, ...updatedAllDivs }));
+    setSavedSemesters(prev => {
+      const nextSaved = { ...prev };
+      sems.forEach(s => { nextSaved[s] = true; });
+      return nextSaved;
+    });
+
+    if (sems.includes(config.semester) && updatedAllDivs[config.semester]) {
+      setDivisions(updatedAllDivs[config.semester]);
+      setNumDivisions(updatedAllDivs[config.semester].length);
+      const totalStr = updatedAllDivs[config.semester].reduce((acc, d) => acc + (d.strength || 0), 0);
+      setTotalStudentStrength(totalStr);
+      setAllocatedClassroomsCount(updatedAllDivs[config.semester].length);
+    }
+
+    return updatedAllDivs;
+  };
+
+  const autoAllocateDivisions = (strengthVal, customRoomsCount, customRooms, progOverride = null) => {
+    const activeProg = progOverride || program || 'UG';
+    const total = parseInt(strengthVal) !== undefined && !isNaN(parseInt(strengthVal)) ? parseInt(strengthVal) : (activeProg === 'PG' ? 30 : 60);
     const roomList = customRooms || rooms;
     const availableClassrooms = roomList.filter(r => r.roomType === 'lecture' || !r.roomType);
     const availableCount = availableClassrooms.length;
 
-    // Calculate number of divisions based on total student strength and available classrooms
-    // E.g.: 60 students with 2 available classrooms -> 2 divisions of 30 each.
-    // 60 students with 3 classrooms -> 3 divisions of 20 each.
     let numDivs = 1;
     if (customRoomsCount && customRoomsCount > 0) {
       numDivs = Math.min(Math.max(1, customRoomsCount), availableCount > 0 ? availableCount : customRoomsCount);
@@ -116,32 +226,74 @@ const GenerateTimetable = () => {
 
     const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
     const newDivs = [];
+    
+    // Check rooms already assigned to other semesters to avoid clashes
+    const otherSemOccupied = new Set();
+    Object.entries(allDivisions).forEach(([sKey, sDivs]) => {
+      if (parseInt(sKey, 10) !== parseInt(config.semester, 10) && Array.isArray(sDivs)) {
+        sDivs.forEach(d => {
+          if (d.rawRoomNumber || d.assignedRoom) {
+            otherSemOccupied.add(normalizeRoom(d.rawRoomNumber || d.assignedRoom));
+          }
+        });
+      }
+    });
+
     for (let i = 0; i < numDivs; i++) {
       const divStrength = base + (i < remainder ? 1 : 0);
-      const assignedRoom = availableClassrooms[i % (availableClassrooms.length || 1)];
-      const rNum = assignedRoom?.roomNumber || `Room-${i + 1}`;
-      const displayRoom = rNum.startsWith('R') || rNum.startsWith('PG') ? rNum : `Room ${rNum}`;
-      newDivs.push({
-        name: `DIV-${alphabet[i]}`,
-        strength: divStrength,
-        assignedRoom: displayRoom,
-        rawRoomNumber: rNum,
-        roomId: assignedRoom ? assignedRoom._id : null,
-        roomCapacity: assignedRoom ? assignedRoom.capacity : (program === 'PG' ? 30 : 60)
+      
+      // Find candidate room
+      const candidates = availableClassrooms.filter(r => {
+        const norm = normalizeRoom(r.roomNumber);
+        return !otherSemOccupied.has(norm) && (r.capacity || 0) >= divStrength;
       });
+
+      candidates.sort((a, b) => {
+        const diffA = (a.capacity || 0) - divStrength;
+        const diffB = (b.capacity || 0) - divStrength;
+        if (diffA !== diffB) return diffA - diffB;
+        return String(a.roomNumber).localeCompare(String(b.roomNumber), undefined, { numeric: true, sensitivity: 'base' });
+      });
+
+      const assignedRoom = candidates[0];
+      if (assignedRoom) {
+        otherSemOccupied.add(normalizeRoom(assignedRoom.roomNumber));
+        const rNum = assignedRoom.roomNumber;
+        const displayRoom = formatRoomDisplay(rNum);
+        newDivs.push({
+          name: `DIV-${alphabet[i]}`,
+          strength: divStrength,
+          assignedRoom: displayRoom,
+          rawRoomNumber: rNum,
+          roomId: assignedRoom._id || null,
+          roomCapacity: assignedRoom.capacity || divStrength,
+          roomWarning: null
+        });
+      } else {
+        newDivs.push({
+          name: `DIV-${alphabet[i]}`,
+          strength: divStrength,
+          assignedRoom: null,
+          rawRoomNumber: null,
+          roomId: null,
+          roomCapacity: null,
+          roomWarning: `No available ${program || 'UG'} room with capacity >= ${divStrength} found in Infrastructure`
+        });
+      }
     }
 
     setNumDivisions(numDivs);
     setDivisions(newDivs);
     setAllocatedClassroomsCount(numDivs);
+    setAllDivisions(prev => ({ ...prev, [config.semester]: newDivs }));
     return newDivs;
   };
 
   const getGroupedSemesters = () => {
     if (program === 'PG') {
-      return cycle === 'odd' ? [3] : [4];
+      return cycle === 'odd' ? [1, 3] : [2, 4];
     }
-    return cycle === 'odd' ? [3, 5, 7] : [4, 6];
+    return cycle === 'odd' ? [1, 3, 5, 7] : [2, 4, 6];
   };
 
   const getAllSemestersForCycle = () => {
@@ -159,17 +311,26 @@ const GenerateTimetable = () => {
 
     let targetSem = config.semester;
     if (!validSems.includes(config.semester)) {
-      targetSem = genMode === 'priority'
-        ? (cycle === 'odd' ? 1 : 2)
-        : (cycle === 'odd' ? 3 : 4);
+      targetSem = cycle === 'odd' ? 1 : 2;
       setConfig(prev => ({ ...prev, semester: targetSem }));
       setPreviewSemester(targetSem);
       setStartTime(allStartTimes[targetSem] || getDefaultStartTime(targetSem));
     }
-    const updatedRooms = await fetchRooms(newProgram);
-    const defaultStr = newProgram === 'PG' ? 30 : 60;
+
+    const defaultStr = newProgram === 'PG' ? 30 : 120;
     setTotalStudentStrength(defaultStr);
-    autoAllocateDivisions(defaultStr, null, updatedRooms);
+
+    // Build fresh initial divisions for the new program to prevent UG strength 60 clashing with PG 30-capacity rooms
+    const freshAllDivs = {};
+    validSems.forEach(s => {
+      freshAllDivs[s] = newProgram === 'PG'
+        ? [{ name: 'DIV-A', strength: 30 }]
+        : [{ name: 'DIV-A', strength: 60 }, { name: 'DIV-B', strength: 60 }];
+    });
+    setAllDivisions(freshAllDivs);
+
+    const updatedRooms = await fetchRooms(newProgram, freshAllDivs);
+    autoAllocateRoomsAllSemesters(validSems, updatedRooms, freshAllDivs, newProgram);
   };
 
   const handleCycleChange = (newCycle) => {
@@ -180,6 +341,8 @@ const GenerateTimetable = () => {
     setPreviewSemester(prioritySem);
     setEntryMode(allEntryModes[prioritySem] || 'dynamic');
     setStartTime(allStartTimes[prioritySem] || getDefaultStartTime(prioritySem));
+    const cycleSems = program === 'PG' ? (newCycle === 'odd' ? [1, 3] : [2, 4]) : (newCycle === 'odd' ? [1, 3, 5, 7] : [2, 4, 6]);
+    autoAllocateRoomsAllSemesters(cycleSems, rooms, null, program);
   };
 
   const handleModeChange = (newMode) => {
@@ -191,7 +354,7 @@ const GenerateTimetable = () => {
       setEntryMode(allEntryModes[prioritySem] || 'dynamic');
       setStartTime(allStartTimes[prioritySem] || getDefaultStartTime(prioritySem));
     } else {
-      const groupedDefaultSem = cycle === 'odd' ? 3 : 4;
+      const groupedDefaultSem = cycle === 'odd' ? 1 : 2;
       setConfig(prev => ({ ...prev, semester: groupedDefaultSem }));
       setPreviewSemester(groupedDefaultSem);
       setEntryMode(allEntryModes[groupedDefaultSem] || 'dynamic');
@@ -216,9 +379,15 @@ const GenerateTimetable = () => {
     if (allDivisions[semNum]) {
       setDivisions(allDivisions[semNum]);
       setNumDivisions(allDivisions[semNum].length);
+      const totalStr = allDivisions[semNum].reduce((acc, d) => acc + (d.strength || 0), 0);
+      setTotalStudentStrength(totalStr);
+      setAllocatedClassroomsCount(allDivisions[semNum].length);
     } else {
-      setDivisions([{ name: 'DIV-A', strength: 60 }]);
-      setNumDivisions(1);
+      const updated = autoAllocateRoomsAllSemesters([semNum], rooms, null, program);
+      if (updated[semNum]) {
+        setDivisions(updated[semNum]);
+        setNumDivisions(updated[semNum].length);
+      }
     }
     if (allFacultyMappings[semNum]) {
       setFacultyMapping(allFacultyMappings[semNum]);
@@ -273,7 +442,7 @@ const GenerateTimetable = () => {
     fetchRooms(program || 'UG');
   }, []);
 
-  const fetchRooms = async (prog = program || 'UG') => {
+  const fetchRooms = async (prog = program || 'UG', customDivs = null) => {
     try {
       const res = await api.get('/rooms', { params: { program: prog } });
       const roomList = res.data.data || [];
@@ -281,6 +450,8 @@ const GenerateTimetable = () => {
       if (roomList.length > 0) {
         setSelectedRoomId(roomList[0]._id);
       }
+      const sems = prog === 'PG' ? (cycle === 'odd' ? [1, 3] : [2, 4]) : (cycle === 'odd' ? [1, 3, 5, 7] : [2, 4, 6]);
+      autoAllocateRoomsAllSemesters(sems, roomList, customDivs, prog);
       return roomList;
     } catch (err) {
       console.error('Error fetching rooms', err);
@@ -553,9 +724,29 @@ const GenerateTimetable = () => {
 
     if (genMode === 'grouped') {
       const semsToGenerate = getGroupedSemesters();
-      const unsaved = semsToGenerate.filter(s => !savedSemesters[s]);
-      if (unsaved.length > 0) {
-        alert(`Please save inputs semester by semester before generating.\nUnsaved semesters: ${unsaved.map(s => `Semester ${s}`).join(', ')}`);
+      const allocatedNow = autoAllocateRoomsAllSemesters(semsToGenerate, rooms, null, program);
+      
+      const missing = [];
+      semsToGenerate.forEach(s => {
+        const sDivs = allocatedNow[s] || allDivisions[s] || [];
+        sDivs.forEach(d => {
+          if (!d.assignedRoom) {
+            missing.push(`Sem ${s} ${d.name} (Strength: ${d.strength || (program === 'PG' ? 30 : 60)})`);
+          }
+        });
+      });
+
+      if (missing.length > 0) {
+        alert(`⚠️ Room Allocation Warning:\n\nCannot generate timetables because no suitable unassigned ${program || 'UG'} classrooms are available in Infrastructure for:\n${missing.map(m => `• ${m}`).join('\n')}\n\nPlease add or configure classrooms with sufficient capacity in the Infrastructure page (/infrastructure).`);
+        return;
+      }
+    } else {
+      const prioritySem = cycle === 'odd' ? 1 : 2;
+      const allocatedNow = autoAllocateRoomsAllSemesters([prioritySem], rooms, null, program);
+      const sDivs = allocatedNow[prioritySem] || divisions;
+      const missing = sDivs.filter(d => !d.assignedRoom);
+      if (missing.length > 0) {
+        alert(`⚠️ Room Allocation Warning:\n\nCannot generate timetable because no suitable unassigned ${program || 'UG'} classrooms are available in Infrastructure for:\n${missing.map(d => `• Sem ${prioritySem} ${d.name} (Strength: ${d.strength || (program === 'PG' ? 30 : 60)})`).join('\n')}\n\nPlease add or configure classrooms with sufficient capacity in the Infrastructure page (/infrastructure).`);
         return;
       }
     }
@@ -1003,8 +1194,8 @@ const GenerateTimetable = () => {
               genMode === 'priority' 
                 ? `Generate Priority ${cycle === 'odd' ? '1st' : '2nd'} Semester`
                 : (program === 'PG'
-                    ? `Generate ${cycle === 'odd' ? '3rd' : '4th'} Semester`
-                    : `Generate ${cycle === 'odd' ? '3rd, 5th & 7th' : '4th & 6th'} Semesters Together`)
+                    ? `Generate ${cycle === 'odd' ? '1st & 3rd' : '2nd & 4th'} Semesters Together`
+                    : `Generate ${cycle === 'odd' ? '1st, 3rd, 5th & 7th' : '2nd, 4th & 6th'} Semesters Together`)
             }</>
           )}
         </button>
@@ -1129,14 +1320,14 @@ const GenerateTimetable = () => {
                         : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-100'
                     }`}
                   >
-                    Grouped ({program === 'PG' ? (cycle === 'odd' ? '3rd Sem' : '4th Sem') : (cycle === 'odd' ? '3rd, 5th, 7th' : '4th, 6th')})
+                    Grouped ({program === 'PG' ? (cycle === 'odd' ? '1st & 3rd' : '2nd & 4th') : (cycle === 'odd' ? '1st, 3rd, 5th, 7th' : '2nd, 4th, 6th')})
                   </button>
                 </div>
               </div>
 
               {/* Grouped Semester Selector Pill Tabs */}
               {genMode === 'grouped' && (
-                <div className="bg-indigo-50/60 p-3 rounded-xl border border-indigo-100 space-y-1.5">
+                <div className="bg-indigo-50/60 p-3 rounded-xl border border-indigo-100 space-y-2">
                   <label className="block text-[10px] font-extrabold text-indigo-900 uppercase flex justify-between items-center">
                     <span>Map Inputs Semester by Semester:</span>
                     <span className="text-[10px] text-indigo-600 font-bold">
@@ -1164,6 +1355,30 @@ const GenerateTimetable = () => {
                       </button>
                     ))}
                   </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const sems = getGroupedSemesters();
+                      autoAllocateRoomsAllSemesters(sems, rooms, null, program);
+                    }}
+                    className="w-full py-2 px-3 bg-white hover:bg-indigo-50 text-indigo-800 border border-indigo-200 text-xs font-black rounded-lg transition-all shadow-2xs flex items-center justify-center gap-1.5"
+                  >
+                    <span>🏢 Auto-Allocate Rooms ({program === 'PG' ? (cycle === 'odd' ? 'Sem 1, 3' : 'Sem 2, 4') : (cycle === 'odd' ? 'Sem 1, 3, 5, 7' : 'Sem 2, 4, 6')})</span>
+                  </button>
+                  {roomAllocationWarnings && roomAllocationWarnings.length > 0 && (
+                    <div className="p-2.5 bg-amber-50 border border-amber-300 rounded-lg text-amber-900 text-[11px] space-y-1">
+                      <div className="flex items-center gap-1.5 font-bold text-amber-800">
+                        <FiAlertTriangle className="text-amber-600 shrink-0" />
+                        <span>Classroom Warning ({roomAllocationWarnings.length})</span>
+                      </div>
+                      <p className="text-[10px] text-amber-700">
+                        Configured {program || 'UG'} classrooms in Infrastructure are insufficient for all divisions.
+                      </p>
+                      <a href="/infrastructure" className="text-[10px] text-indigo-700 font-extrabold underline block">
+                        Configure Rooms in Infrastructure (/infrastructure) →
+                      </a>
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -1313,12 +1528,20 @@ const GenerateTimetable = () => {
                             </div>
                           </div>
                           <div className="text-[11px] text-gray-600 font-semibold flex items-center gap-1">
-                            <span>Room:</span>
-                            <span className="font-extrabold text-indigo-950 bg-gray-100 px-1.5 py-0.5 rounded border border-gray-200">
-                              {div.assignedRoom}
-                            </span>
-                            {div.roomCapacity && (
-                              <span className="text-[9px] text-gray-400">(Cap: {div.roomCapacity})</span>
+                            {div.assignedRoom && div.assignedRoom !== 'No Room Assigned' ? (
+                              <>
+                                <span>Room:</span>
+                                <span className="font-extrabold text-indigo-950 bg-gray-100 px-1.5 py-0.5 rounded border border-gray-200">
+                                  {div.assignedRoom}
+                                </span>
+                                {div.roomCapacity && (
+                                  <span className="text-[9px] text-gray-400">(Cap: {div.roomCapacity})</span>
+                                )}
+                              </>
+                            ) : (
+                              <span className="text-[10px] font-bold text-amber-800 bg-amber-100 border border-amber-300 px-1.5 py-0.5 rounded shadow-2xs" title={div.roomWarning || 'No room available'}>
+                                ⚠️ No Room
+                              </span>
                             )}
                           </div>
                         </div>
@@ -1786,11 +2009,19 @@ const GenerateTimetable = () => {
                             </div>
                             <div className="text-xs text-gray-700 font-semibold flex items-center gap-1.5 flex-wrap">
                               <span className="text-gray-500">Allocated Room:</span>
-                              <span className="font-extrabold text-indigo-950 bg-gray-100 px-2.5 py-0.5 rounded-md border border-gray-300">
-                                🏢 {displayRoom}
-                              </span>
-                              {roomCap && (
-                                <span className="text-[11px] text-gray-500 font-medium">(Capacity: {roomCap})</span>
+                              {displayRoom && displayRoom !== 'No Room Assigned' ? (
+                                <>
+                                  <span className="font-extrabold text-indigo-950 bg-gray-100 px-2.5 py-0.5 rounded-md border border-gray-300">
+                                    🏢 {displayRoom}
+                                  </span>
+                                  {roomCap && (
+                                    <span className="text-[11px] text-gray-500 font-medium">(Capacity: {roomCap})</span>
+                                  )}
+                                </>
+                              ) : (
+                                <span className="font-bold text-amber-800 bg-amber-50 border border-amber-300 px-2 py-0.5 rounded-md text-[11px]">
+                                  ⚠️ No Room Assigned
+                                </span>
                               )}
                             </div>
                           </div>
@@ -1820,6 +2051,15 @@ const GenerateTimetable = () => {
                                       <span className="text-[10px] font-bold text-indigo-600 bg-white px-1.5 py-0.5 rounded border border-indigo-200 shadow-2xs my-0.5">
                                         {displayStrength} Students
                                       </span>
+                                      {displayRoom && displayRoom !== 'No Room Assigned' ? (
+                                        <span className="text-[10px] font-extrabold text-indigo-950 bg-indigo-100 px-1.5 py-0.5 rounded my-0.5 border border-indigo-200">
+                                          🏢 {displayRoom}
+                                        </span>
+                                      ) : (
+                                        <span className="text-[9px] font-bold text-amber-800 bg-amber-100 px-1.5 py-0.5 rounded my-0.5 border border-amber-300">
+                                          ⚠️ No Room
+                                        </span>
+                                      )}
                                       <span className="text-[9px] font-extrabold text-gray-500 uppercase">Day \ Time</span>
                                     </div>
                                   </th>

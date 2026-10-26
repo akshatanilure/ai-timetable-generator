@@ -180,6 +180,11 @@ const Timetables = () => {
                         {isPGTimetable(selectedTimetable) ? 'PG' : 'UG'}
                       </span>
                       Sem {selectedTimetable.semester} - Div {selectedTimetable.division?.divisionName || 'A'}
+                      {(selectedTimetable.division?.assignedRoom || selectedTimetable.settings?.assignedRoom || selectedTimetable.roomAllocations?.assignedRoom) && (
+                        <span className="bg-amber-100 text-amber-900 border border-amber-300 px-1.5 py-0.5 rounded text-[10px] font-black">
+                          🏢 {selectedTimetable.division?.assignedRoom || selectedTimetable.settings?.assignedRoom || selectedTimetable.roomAllocations?.assignedRoom}
+                        </span>
+                      )}
                     </span>
                   </div>
 

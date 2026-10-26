@@ -259,6 +259,32 @@ exports.generateTimetableML = async (req, res) => {
       return sObj;
     });
 
+    // Automatic Room Allocation avoiding clashes across semesters and divisions
+    const { allocateRoomsForDivisions, normalizeRoomIdentifier } = require('../services/roomAllocationService');
+    const occupiedRoomNorms = new Set();
+    allParityTimetables.forEach(tt => {
+      if (tt.generatedSchedule && Array.isArray(tt.generatedSchedule)) {
+        tt.generatedSchedule.forEach(entry => {
+          if (entry.room) {
+            const rNum = typeof entry.room === 'object' ? (entry.room.roomNumber || entry.room.assignedRoom) : entry.room;
+            if (rNum) occupiedRoomNorms.add(normalizeRoomIdentifier(rNum));
+          }
+        });
+      }
+    });
+
+    const defaultStrength = prog === 'PG' ? 30 : 60;
+    const inputDivs = divisions && divisions.length > 0 ? divisions : [{ name: 'DIV-A', strength: defaultStrength }];
+    const allocatedDivisions = await allocateRoomsForDivisions(inputDivs, rooms, occupiedRoomNorms, prog, semesterVal);
+
+    if (allocatedDivisions.warnings && allocatedDivisions.warnings.length > 0) {
+      return res.status(400).json({
+        success: false,
+        error: `Room Allocation Warning: ${allocatedDivisions.warnings.join(' ')} Please configure additional classrooms in Infrastructure (/infrastructure).`,
+        warnings: allocatedDivisions.warnings
+      });
+    }
+
     // 2. Format the payload to send to Python
     const payload = {
       subjects: formattedSubjects,
@@ -269,7 +295,7 @@ exports.generateTimetableML = async (req, res) => {
       rooms: rooms.map(r => (r.toJSON ? r.toJSON() : r)),
       constraints: constraints || {},
       facultyMapping: facultyMapping || {},
-      divisions: divisions || [{ name: 'DIV-A', strength: 60 }],
+      divisions: allocatedDivisions,
       facultyMaxWorkloads: adjustedMaxWorkloads,
       fixedTimings: fixedTimings || {},
       entryMode: entryMode || 'dynamic',
@@ -278,7 +304,8 @@ exports.generateTimetableML = async (req, res) => {
       branch: branch || 'CSE',
       timetableRules,
       startTime: timetableRules.college_start_time,
-      program: prog
+      program: prog,
+      inMemoryTimetables: req.body.inMemoryTimetables || []
     };
 
     // 3. Make HTTP request to the Python FastAPI microservice with Auto-Repair loop
@@ -438,8 +465,14 @@ exports.saveTimetableML = async (req, res) => {
         division: div._id,
         program: prog,
         generatedSchedule: formattedSchedule,
+        roomAllocations: {
+          assignedRoom: targetRoom,
+          roomCapacity: inputDiv?.roomCapacity || 60,
+          divisionName: divName
+        },
         settings: {
-          college_start_time: effectiveStartTime
+          college_start_time: effectiveStartTime,
+          assignedRoom: targetRoom
         },
         createdBy: creatorId
       });

@@ -160,7 +160,7 @@ const StudentDashboard = () => {
                 </button>
               </div>
               <div className="print:shadow-none print:border-none">
-                <TimetableGrid schedule={selectedTimetable.generatedSchedule} />
+                <TimetableGrid schedule={selectedTimetable.generatedSchedule} timetable={selectedTimetable} />
               </div>
             </div>
           ) : (
