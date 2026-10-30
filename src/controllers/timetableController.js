@@ -249,15 +249,45 @@ exports.generateTimetableML = async (req, res) => {
 
     const timetableRules = getRulesForSemester(semesterVal, prog, startTime);
 
-    // Format subjects to ensure isFullClassLab is set correctly
+    // Format subjects to ensure isFullClassLab is set correctly and electives are categorized
     const formattedSubjects = subjects.map(s => {
       const sObj = s.toJSON ? s.toJSON() : { ...s };
       const subName = (sObj.subjectName || '').toLowerCase();
+      const subCode = (sObj.subjectCode || '').toUpperCase();
       if ((semesterVal === 1 || semesterVal === 2) && (subName.includes('mathematic') || subName.includes('math'))) {
         sObj.isFullClassLab = true;
       }
+      if (subCode.includes('UCSO') || subName.includes('open elective')) {
+        sObj.subjectCategory = 'Open Elective';
+        sObj.elective = true;
+      } else if (subCode.includes('UCSE') || subCode.includes('PCSE') || subName.includes('program elective') || sObj.subjectType === 'elective' || sObj.elective) {
+        if (!sObj.subjectCategory || sObj.subjectCategory === 'Compulsory Subject') {
+          sObj.subjectCategory = 'Program Elective 1';
+        }
+        sObj.elective = true;
+      }
       return sObj;
     });
+
+    // Sanitize fixedTimings for UG Sem 5, Sem 6 & Sem 7 (PE subjects are automatically assigned by algorithm)
+    let processedFixedTimings = { ...(fixedTimings || {}) };
+    if (prog !== 'PG' && [5, 6, 7].includes(semesterVal)) {
+      const peSubIds = new Set(
+        formattedSubjects
+          .filter(s => (s.subjectCode || '').toUpperCase().includes('UCSE') || (s.subjectName || '').toLowerCase().includes('program elective') || s.subjectType === 'elective' || s.elective)
+          .map(s => s._id.toString())
+      );
+      const cleaned = {};
+      Object.entries(processedFixedTimings).forEach(([divName, subMap]) => {
+        cleaned[divName] = {};
+        Object.entries(subMap || {}).forEach(([subId, slots]) => {
+          if (!peSubIds.has(subId.toString())) {
+            cleaned[divName][subId] = slots;
+          }
+        });
+      });
+      processedFixedTimings = cleaned;
+    }
 
     // Automatic Room Allocation avoiding clashes across semesters and divisions
     const { allocateRoomsForDivisions, normalizeRoomIdentifier } = require('../services/roomAllocationService');
@@ -297,7 +327,7 @@ exports.generateTimetableML = async (req, res) => {
       facultyMapping: facultyMapping || {},
       divisions: allocatedDivisions,
       facultyMaxWorkloads: adjustedMaxWorkloads,
-      fixedTimings: fixedTimings || {},
+      fixedTimings: processedFixedTimings,
       entryMode: entryMode || 'dynamic',
       labsConfig: (labsConfig && labsConfig.length > 0) ? labsConfig : labs.map((l, i) => ({ id: i + 1, name: l.labName, capacity: l.capacity })),
       semester: semesterVal,

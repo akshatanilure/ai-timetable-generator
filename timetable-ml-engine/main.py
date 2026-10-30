@@ -113,10 +113,22 @@ def is_audit_extra_subject(sub):
 
 def get_subject_category(sub):
     cat = sub.get('subjectCategory')
-    if cat and str(cat).strip():
+    code = str(sub.get('subjectCode') or '').upper()
+    name = str(sub.get('subjectName') or '').lower()
+
+    if 'UCSO' in code or 'open elective' in name:
+        return 'Open Elective'
+
+    if cat and str(cat).strip() and str(cat).strip() != 'Compulsory Subject':
         return str(cat).strip()
-    if sub.get('elective'):
-        return 'Elective 1'
+
+    if sub.get('elective') or sub.get('subjectType') == 'elective' or 'UCSE' in code or 'PCSE' in code or 'program elective' in name or 'elective' in name:
+        if 'elective 2' in name or 'pe-2' in name or 'pe 2' in name or 'e2' in code:
+            return 'Program Elective 2'
+        if 'elective 3' in name or 'pe-3' in name or 'pe 3' in name or 'e3' in code:
+            return 'Program Elective 3'
+        return 'Program Elective 1'
+
     return 'Compulsory Subject'
 
 def create_individual(sessions, teachers, faculty_mapping, rooms, fixed_timings, global_start_idx=0, semester=1, entry_mode="dynamic", divisions_info=None, start_time=None):
@@ -287,7 +299,14 @@ def create_individual(sessions, teachers, faculty_mapping, rooms, fixed_timings,
                             placed = True
                             break
 
-    def assign_elective_teachers_and_rooms(session, div_name):
+    elective_assignment_cache = {}
+
+    def assign_elective_teachers_and_rooms(session, div_name, slot_key=None):
+        grp_name = session.get('group_name', '')
+        cache_key = (grp_name, slot_key)
+        if slot_key and cache_key in elective_assignment_cache:
+            return elective_assignment_cache[cache_key]
+
         group_teachers = []
         group_rooms = []
         used_t_ids = set()
@@ -317,41 +336,50 @@ def create_individual(sessions, teachers, faculty_mapping, rooms, fixed_timings,
             used_r_ids.add(str(r_obj.get('_id')))
             group_rooms.append(r_obj)
 
+        if slot_key:
+            elective_assignment_cache[cache_key] = (group_teachers, group_rooms)
+
         return group_teachers, group_rooms
 
+    used_group_slots = {div['name']: {} for div in divisions}
     non_fixed_electives = []
     for session in electives:
         div_name = session.get('division', 'DIV-A')
-        placed = False
+        grp_name = session.get('group_name', 'Elective')
         div_fixed_timings = fixed_timings.get(div_name, {})
         
-        valid_fixed = []
+        group_fixed_slots = []
+        seen_grp_slots = set()
         for sub in session.get('subjects', []):
             sub_id = str(sub.get('_id'))
             for t in div_fixed_timings.get(sub_id, []):
-                if t.get('day') in DAYS and t.get('time') in SLOTS:
-                    valid_fixed.append((sub_id, t))
+                d = t.get('day')
+                tm = t.get('time')
+                if d in DAYS and tm in SLOTS and (d, tm) not in seen_grp_slots:
+                    seen_grp_slots.add((d, tm))
+                    group_fixed_slots.append((d, tm))
 
-        for sub_id, f_slot in valid_fixed:
-            if used_fixed[div_name].get(sub_id, 0) < len(div_fixed_timings.get(sub_id, [])):
-                f_day = f_slot.get('day', '')
-                f_time = f_slot.get('time', '')
-                f_idx = SLOTS.index(f_time)
-                if (f_day, f_idx) not in occupied[div_name]:
-                    if f_day != 'Saturday' or f_idx in saturday_valid_indices:
-                        occupied[div_name].add((f_day, f_idx))
-                        used_fixed[div_name][sub_id] = used_fixed[div_name].get(sub_id, 0) + 1
-                        g_teachers, g_rooms = assign_elective_teachers_and_rooms(session, div_name)
-                        timetable.append({
-                            "session": session,
-                            "day": f_day,
-                            "slot_idx": f_idx,
-                            "teacher": g_teachers,
-                            "room": g_rooms,
-                            "fixed": True
-                        })
-                        placed = True
-                        break
+        used_idx = used_group_slots[div_name].get(grp_name, 0)
+        placed = False
+        while used_idx < len(group_fixed_slots):
+            f_day, f_time = group_fixed_slots[used_idx]
+            used_idx += 1
+            used_group_slots[div_name][grp_name] = used_idx
+            f_idx = SLOTS.index(f_time)
+            if (f_day, f_idx) not in occupied[div_name]:
+                if f_day != 'Saturday' or f_idx in saturday_valid_indices:
+                    occupied[div_name].add((f_day, f_idx))
+                    g_teachers, g_rooms = assign_elective_teachers_and_rooms(session, div_name, (f_day, f_idx))
+                    timetable.append({
+                        "session": session,
+                        "day": f_day,
+                        "slot_idx": f_idx,
+                        "teacher": g_teachers,
+                        "room": g_rooms,
+                        "fixed": True
+                    })
+                    placed = True
+                    break
         if not placed:
             non_fixed_electives.append(session)
 
@@ -371,7 +399,7 @@ def create_individual(sessions, teachers, faculty_mapping, rooms, fixed_timings,
         for (day, slot_idx) in available_slots:
             if (day, slot_idx) not in occupied[div_name] and (day, slot_idx) not in reserved_fixed[div_name]:
                 occupied[div_name].add((day, slot_idx))
-                g_teachers, g_rooms = assign_elective_teachers_and_rooms(session, div_name)
+                g_teachers, g_rooms = assign_elective_teachers_and_rooms(session, div_name, (day, slot_idx))
                 timetable.append({
                     "session": session,
                     "day": day,
@@ -470,6 +498,9 @@ def create_individual(sessions, teachers, faculty_mapping, rooms, fixed_timings,
         div_name = session.get('division', 'DIV-A')
         sub_id = str(session['subject'].get('_id'))
         is_audit = is_audit_extra_subject(session['subject'])
+        sub_name = (session['subject'].get('subjectName') or '').lower()
+        sub_code = str(session['subject'].get('subjectCode') or '').lower()
+        is_math = any(k in sub_name for k in ['math', 'mathematic']) or 'mat' in sub_code or 'mac' in sub_code
         
         available_slots = []
         for slot_idx in allowed_theory_indices:
@@ -488,6 +519,13 @@ def create_individual(sessions, teachers, faculty_mapping, rooms, fixed_timings,
             before_lunch = [sl for sl in available_slots if sl[1] not in [6, 5]]
             random.shuffle(before_lunch)
             shuffled_slots = after_lunch + before_lunch
+        elif is_math and int(semester) in [1, 2, 3, 4]:
+            # Prefer morning slots for Mathematics in Sem 1, 2, 3, 4
+            morning = [(d, s) for (d, s) in available_slots if s in [global_start_idx, global_start_idx + 1, global_start_idx + 2]]
+            rest = [(d, s) for (d, s) in available_slots if s not in [global_start_idx, global_start_idx + 1, global_start_idx + 2]]
+            random.shuffle(morning)
+            random.shuffle(rest)
+            shuffled_slots = morning + rest
         else:
             shuffled_slots = sorted(available_slots, key=lambda x: random.random())
 
@@ -670,9 +708,9 @@ def calculate_fitness(individual, teachers, faculty_max_workloads, global_start_
                         if t_id != 'unknown':
                             for i in range(duration):
                                 slot_key = f"{day}_{slot_idx + i}"
-                                if t_id not in faculty_time: faculty_time[t_id] = set()
+                                if t_id not in faculty_time: faculty_time[t_id] = {}
                                 if slot_key in faculty_time[t_id]: conflicts += 5000
-                                faculty_time[t_id].add(slot_key)
+                                faculty_time[t_id][slot_key] = 'lab'
                                 if in_memory_bookings and (day, slot_idx + i, t_id) in in_memory_bookings.get('teachers', set()):
                                     conflicts += 20000
             for rm in (entry['room'] if isinstance(entry['room'], list) else [entry['room']]):
@@ -681,14 +719,17 @@ def calculate_fitness(individual, teachers, faculty_max_workloads, global_start_
                     if r_id:
                         for i in range(duration):
                             slot_key = f"{day}_{slot_idx + i}"
-                            if r_id not in room_time: room_time[r_id] = set()
+                            if r_id not in room_time: room_time[r_id] = {}
                             if slot_key in room_time[r_id]: conflicts += 10000
-                            room_time[r_id].add(slot_key)
+                            room_time[r_id][slot_key] = 'lab'
                             if in_memory_bookings and (day, slot_idx + i, normalize_room_identifier(r_id)) in in_memory_bookings.get('rooms', set()):
                                 conflicts += 30000
         else:
             faculties = entry['teacher'] if isinstance(entry['teacher'], list) else [entry['teacher']]
             rooms_assigned = entry['room'] if isinstance(entry['room'], list) else [entry['room']]
+            is_elec = entry['session'].get('type') == 'elective_group'
+            grp_name = entry['session'].get('group_name', '')
+            
             for i in range(duration):
                 slot_key = f"{day}_{slot_idx + i}"
                 if div not in division_time: division_time[div] = set()
@@ -700,18 +741,24 @@ def calculate_fitness(individual, teachers, faculty_max_workloads, global_start_
                     if fac and isinstance(fac, dict):
                         t_id = str(fac.get('_id') or fac.get('id') or 'unknown')
                         if t_id != 'unknown':
-                            if t_id not in faculty_time: faculty_time[t_id] = set()
-                            if slot_key in faculty_time[t_id]: conflicts += 2000
-                            faculty_time[t_id].add(slot_key)
+                            if t_id not in faculty_time: faculty_time[t_id] = {}
+                            if slot_key in faculty_time[t_id]:
+                                prev_source = faculty_time[t_id][slot_key]
+                                if not (is_elec and prev_source == grp_name):
+                                    conflicts += 2000
+                            faculty_time[t_id][slot_key] = grp_name if is_elec else 'theory'
                             if in_memory_bookings and (day, slot_idx + i, t_id) in in_memory_bookings.get('teachers', set()):
                                 conflicts += 20000
                 for rm in rooms_assigned:
                     if rm and isinstance(rm, dict):
                         r_id = str(rm.get('_id') or rm.get('id') or rm.get('roomNumber') or '')
                         if r_id:
-                            if r_id not in room_time: room_time[r_id] = set()
-                            if slot_key in room_time[r_id]: conflicts += 20000
-                            room_time[r_id].add(slot_key)
+                            if r_id not in room_time: room_time[r_id] = {}
+                            if slot_key in room_time[r_id]:
+                                prev_source = room_time[r_id][slot_key]
+                                if not (is_elec and prev_source == grp_name):
+                                    conflicts += 20000
+                            room_time[r_id][slot_key] = grp_name if is_elec else 'theory'
                             if in_memory_bookings and (day, slot_idx + i, normalize_room_identifier(r_id)) in in_memory_bookings.get('rooms', set()):
                                 conflicts += 30000
                 
@@ -799,6 +846,200 @@ def run_genetic_algorithm(sessions, teachers, faculty_mapping, rooms, fixed_timi
             next_generation.append(child)
         population = next_generation
     return best_individual
+
+def auto_schedule_electives(elective_groups, request, divs, global_start_idx, allowed_theory_indices, saturday_valid_indices, in_mem_bookings):
+    if not elective_groups:
+        return
+    if request.fixedTimings is None:
+        request.fixedTimings = {}
+
+    DAYS_ORDER = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
+
+    # Track slots occupied by existing manual fixed timings
+    reserved_slots_per_div = {d['name']: set() for d in divs}
+    for d_name, sub_timings in request.fixedTimings.items():
+        if d_name not in reserved_slots_per_div:
+            reserved_slots_per_div[d_name] = set()
+        for s_id, s_slots in sub_timings.items():
+            for sl in s_slots:
+                day = sl.get('day')
+                time_str = sl.get('time')
+                if day in DAYS_ORDER and time_str in SLOTS:
+                    reserved_slots_per_div[d_name].add((day, SLOTS.index(time_str)))
+
+    assigned_elective_slots_overall = set()
+
+    # Preference ranking for slots:
+    # "preferably in the morning slots or the last available period of the same day"
+    def get_slot_priority(day, s_idx):
+        day_penalty = 0 if day != 'Saturday' else 15
+        if day != 'Saturday':
+            if s_idx == global_start_idx:
+                return 10 + day_penalty
+            elif s_idx == 6:  # Last period on weekday
+                return 12 + day_penalty
+            elif s_idx == global_start_idx + 1:
+                return 20 + day_penalty
+            elif s_idx == 5:
+                return 30 + day_penalty
+            else:
+                return 100 + day_penalty
+        else:
+            max_sat = max(saturday_valid_indices) if saturday_valid_indices else 3
+            if s_idx == global_start_idx:
+                return 15 + day_penalty
+            elif s_idx == max_sat:  # Last period on Saturday
+                return 18 + day_penalty
+            elif s_idx == global_start_idx + 1:
+                return 25 + day_penalty
+            else:
+                return 120 + day_penalty
+
+    candidate_slots = []
+    for day in DAYS_ORDER:
+        allowed = [s for s in allowed_theory_indices if s in saturday_valid_indices] if day == 'Saturday' else allowed_theory_indices
+        for s_idx in allowed:
+            candidate_slots.append((day, s_idx, get_slot_priority(day, s_idx)))
+
+    candidate_slots.sort(key=lambda x: x[2])
+
+    booked_teachers = in_mem_bookings.get('teachers', set())
+    booked_rooms = in_mem_bookings.get('rooms', set())
+
+    for group_name, group_subs in elective_groups.items():
+        # Check if already manually fixed
+        has_manual = False
+        first_div = divs[0]['name'] if divs else 'DIV-A'
+        first_div_fixed = request.fixedTimings.get(first_div, {})
+        for s in group_subs:
+            s_id = str(s.get('_id'))
+            if s_id in first_div_fixed and len(first_div_fixed[s_id]) > 0:
+                has_manual = True
+                break
+
+        if has_manual:
+            continue
+
+        hours_needed = 1
+        for s in group_subs:
+            hrs = s.get("lectureHours", 0) + s.get("tutorialHours", 0)
+            if hrs == 0 and s.get("practicalHours", 0) == 0:
+                hrs = s.get("credits", 3)
+            if hrs > hours_needed:
+                hours_needed = hrs
+
+        chosen_slots = []
+        chosen_days = set()
+
+        # Pass 1: Try to pick slots on different days
+        for day, s_idx, score in candidate_slots:
+            if len(chosen_slots) >= hours_needed:
+                break
+            if day in chosen_days:
+                continue
+            if (day, s_idx) in assigned_elective_slots_overall:
+                continue
+
+            div_conflict = any((day, s_idx) in reserved_slots_per_div[d['name']] for d in divs)
+            if div_conflict:
+                continue
+
+            teacher_conflict = False
+            slot_teachers = set()
+            for s in group_subs:
+                s_id = str(s.get('_id'))
+                mapped_th = None
+                for d in divs:
+                    fac_map = request.facultyMapping.get(d['name'], {}).get(s_id, request.facultyMapping.get(s_id, {}))
+                    if isinstance(fac_map, dict) and fac_map.get('theory'):
+                        mapped_th = str(fac_map['theory'])
+                        break
+                    elif isinstance(fac_map, str) and fac_map:
+                        mapped_th = fac_map
+                        break
+                if mapped_th:
+                    if (day, s_idx, mapped_th) in booked_teachers or mapped_th in slot_teachers:
+                        teacher_conflict = True
+                        break
+                    slot_teachers.add(mapped_th)
+            if teacher_conflict:
+                continue
+
+            free_rooms = 0
+            for r in request.rooms:
+                r_id = str(r.get('_id') or r.get('roomNumber') or '')
+                norm_r = normalize_room_identifier(r_id)
+                if (day, s_idx, norm_r) not in booked_rooms:
+                    free_rooms += 1
+            if free_rooms < len(group_subs):
+                continue
+
+            chosen_slots.append((day, s_idx))
+            chosen_days.add(day)
+            for t_id in slot_teachers:
+                booked_teachers.add((day, s_idx, t_id))
+
+        # Pass 2: If needed more slots, allow multiple slots on the same day if necessary
+        if len(chosen_slots) < hours_needed:
+            for day, s_idx, score in candidate_slots:
+                if len(chosen_slots) >= hours_needed:
+                    break
+                if (day, s_idx) in chosen_slots or (day, s_idx) in assigned_elective_slots_overall:
+                    continue
+                div_conflict = any((day, s_idx) in reserved_slots_per_div[d['name']] for d in divs)
+                if div_conflict:
+                    continue
+                teacher_conflict = False
+                slot_teachers = set()
+                for s in group_subs:
+                    s_id = str(s.get('_id'))
+                    mapped_th = None
+                    for d in divs:
+                        fac_map = request.facultyMapping.get(d['name'], {}).get(s_id, request.facultyMapping.get(s_id, {}))
+                        if isinstance(fac_map, dict) and fac_map.get('theory'):
+                            mapped_th = str(fac_map['theory'])
+                            break
+                        elif isinstance(fac_map, str) and fac_map:
+                            mapped_th = fac_map
+                            break
+                    if mapped_th:
+                        if (day, s_idx, mapped_th) in booked_teachers or mapped_th in slot_teachers:
+                            teacher_conflict = True
+                            break
+                        slot_teachers.add(mapped_th)
+                if teacher_conflict:
+                    continue
+
+                free_rooms = 0
+                for r in request.rooms:
+                    r_id = str(r.get('_id') or r.get('roomNumber') or '')
+                    norm_r = normalize_room_identifier(r_id)
+                    if (day, s_idx, norm_r) not in booked_rooms:
+                        free_rooms += 1
+                if free_rooms < len(group_subs):
+                    continue
+
+                chosen_slots.append((day, s_idx))
+                for t_id in slot_teachers:
+                    booked_teachers.add((day, s_idx, t_id))
+
+        # Register chosen slots across ALL divisions in request.fixedTimings
+        for day, s_idx in chosen_slots:
+            assigned_elective_slots_overall.add((day, s_idx))
+            for d in divs:
+                d_name = d['name']
+                reserved_slots_per_div[d_name].add((day, s_idx))
+                if d_name not in request.fixedTimings:
+                    request.fixedTimings[d_name] = {}
+                for s in group_subs:
+                    s_id = str(s.get('_id'))
+                    if s_id not in request.fixedTimings[d_name]:
+                        request.fixedTimings[d_name][s_id] = []
+                    request.fixedTimings[d_name][s_id].append({
+                        "day": day,
+                        "time": SLOTS[s_idx]
+                    })
+        print(f"[AUTO_SCHEDULE_ELECTIVES] Group '{group_name}' ({len(group_subs)} subjects, {hours_needed} hrs) scheduled at: {[(day, SLOTS[s_idx]) for day, s_idx in chosen_slots]}")
 
 @app.get("/")
 def read_root(): return {"status": "ML Engine is running"}
@@ -1025,6 +1266,18 @@ def generate_timetable(request: GenerationRequest):
     global_start_idx, allowed_theory_indices, valid_lab_start_indices, saturday_valid_indices = get_semester_timing_config(request.semester, req_start_time)
     
     in_mem_bookings = extract_in_memory_bookings(request.inMemoryTimetables)
+
+    # Auto-schedule electives (e.g. Program Electives in Sem 5 & 6, or unpinned electives)
+    all_elective_groups = {}
+    for sub in request.subjects:
+        cat = get_subject_category(sub)
+        if cat != 'Compulsory Subject':
+            if cat not in all_elective_groups:
+                all_elective_groups[cat] = []
+            all_elective_groups[cat].append(sub)
+
+    auto_schedule_electives(all_elective_groups, request, divs, global_start_idx, allowed_theory_indices, saturday_valid_indices, in_mem_bookings)
+
     best_individual = run_genetic_algorithm(sessions, request.teachers, request.facultyMapping, request.rooms, request.fixedTimings, request.facultyMaxWorkloads, global_start_idx, request.semester, request.entryMode, divs, req_start_time, in_mem_bookings)
     pack_individual(best_individual, global_start_idx, request.semester, req_start_time)
     best_fitness = calculate_fitness(best_individual, request.teachers, request.facultyMaxWorkloads, global_start_idx, request.semester, req_start_time, in_mem_bookings)

@@ -15,7 +15,8 @@ const SUBJECT_CATEGORIES = [
   'Compulsory Subject',
   'Elective 1',
   'Elective 2',
-  'Elective 3'
+  'Elective 3',
+  'Open Elective'
 ];
 
 const Subjects = () => {

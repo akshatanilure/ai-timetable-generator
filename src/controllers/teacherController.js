@@ -48,7 +48,8 @@ exports.getTeachers = async (req, res) => {
             }
           });
           
-          tObj.currentWorkload = dynamicWorkload;
+          // Preserve persisted teacher workload from DB if dynamic workload is 0 or lower
+          tObj.currentWorkload = Math.max(t.currentWorkload || 0, dynamicWorkload);
           return tObj;
         });
 
@@ -164,3 +165,51 @@ exports.deleteTeacher = async (req, res) => {
     res.status(500).json({ success: false, error: error.message });
   }
 };
+
+// @desc    Update teacher workloads for a specific semester
+// @route   POST /api/teachers/workload
+// @access  Private (Admin/Teacher)
+exports.updateSemesterWorkloads = async (req, res) => {
+  try {
+    const { semester, teacherWorkloads } = req.body;
+    if (!semester) {
+      return res.status(400).json({ success: false, error: 'Semester is required' });
+    }
+
+    const semKey = String(semester);
+    const workloads = teacherWorkloads || {};
+
+    const teachers = await Teacher.find();
+    for (const teacher of teachers) {
+      const tId = teacher._id.toString();
+      const hoursInThisSem = Number(workloads[tId]) || 0;
+
+      let semMap = {};
+      if (teacher.semesterWorkloads instanceof Map) {
+        semMap = Object.fromEntries(teacher.semesterWorkloads);
+      } else if (teacher.semesterWorkloads && typeof teacher.semesterWorkloads === 'object') {
+        semMap = { ...teacher.semesterWorkloads };
+      }
+
+      if (hoursInThisSem > 0) {
+        semMap[semKey] = hoursInThisSem;
+      } else {
+        delete semMap[semKey];
+      }
+
+      const totalWorkload = Object.values(semMap).reduce((acc, h) => acc + (Number(h) || 0), 0);
+
+      teacher.semesterWorkloads = semMap;
+      teacher.currentWorkload = totalWorkload;
+      await teacher.save();
+    }
+
+    res.status(200).json({
+      success: true,
+      message: `Teacher workloads for semester ${semester} saved successfully`,
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+

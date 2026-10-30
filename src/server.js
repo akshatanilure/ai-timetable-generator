@@ -10,7 +10,20 @@ const { notFound, errorHandler } = require('./middleware/errorMiddleware');
 dotenv.config();
 
 // Connect to Database
-connectDB();
+connectDB().then(async () => {
+  try {
+    const HistoricalExperience = require('./models/HistoricalExperience');
+    const count = await HistoricalExperience.countDocuments();
+    if (count === 0) {
+      console.log('Importing historical teacher experience data...');
+      const { importHistoricalExcel } = require('./services/historicalExperienceService');
+      await importHistoricalExcel();
+      console.log('Historical experience data imported successfully.');
+    }
+  } catch (err) {
+    console.error('Auto-import error:', err.message);
+  }
+});
 
 const app = express();
 
@@ -31,6 +44,7 @@ app.use('/api/divisions', require('./routes/divisionRoutes'));
 app.use('/api/batches', require('./routes/batchRoutes'));
 app.use('/api/constraints', require('./routes/constraintRoutes'));
 app.use('/api/timetables', require('./routes/timetableRoutes'));
+app.use('/api/experience', require('./routes/historicalExperienceRoutes'));
 
 app.get('/', (req, res) => {
   res.json({ message: 'API is running...' });

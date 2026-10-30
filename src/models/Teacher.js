@@ -82,6 +82,11 @@ const teacherSchema = new mongoose.Schema(
       type: Number,
       default: 0,
     },
+    semesterWorkloads: {
+      type: Map,
+      of: Number,
+      default: {},
+    },
     user: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'User',

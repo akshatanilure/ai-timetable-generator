@@ -5,12 +5,15 @@ const {
   createTeacher,
   updateTeacher,
   deleteTeacher,
+  updateSemesterWorkloads,
 } = require('../controllers/teacherController');
 const { protect } = require('../middleware/authMiddleware');
 const { isAdmin, isAdminOrTeacher } = require('../middleware/roleMiddleware');
 const { validateTeacher, validateTeacherUpdate } = require('../middleware/validation/teacherValidation');
 
 const router = express.Router();
+
+router.post('/workload', protect, isAdminOrTeacher, updateSemesterWorkloads);
 
 router
   .route('/')

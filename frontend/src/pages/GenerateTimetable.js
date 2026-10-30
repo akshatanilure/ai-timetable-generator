@@ -3,7 +3,7 @@ import api from '../services/api';
 import { 
   FiCpu, FiAlertCircle, FiCheckCircle, FiZap, FiSettings, 
   FiRefreshCw, FiActivity, FiUsers, FiClock,
-  FiBookOpen, FiList, FiDownload, FiAlertTriangle
+  FiBookOpen, FiList, FiDownload, FiAlertTriangle, FiUpload
 } from 'react-icons/fi';
 import Select from 'react-select';
 import html2pdf from 'html2pdf.js';
@@ -13,6 +13,8 @@ const GenerateTimetable = () => {
   const [genMode, setGenMode] = useState('priority'); // 'priority' (Sem 1/2) or 'grouped' (3,5,7 or 4,6)
   const [allFacultyMappings, setAllFacultyMappings] = useState({});
   const [allFixedTimings, setAllFixedTimings] = useState({});
+  const [historicalRankings, setHistoricalRankings] = useState({});
+  const [importingExperience, setImportingExperience] = useState(false);
 
   const [loading, setLoading] = useState(false);
   const [config, setConfig] = useState({
@@ -34,6 +36,7 @@ const GenerateTimetable = () => {
   const [fixedTimings, setFixedTimings] = useState({});
   const [peCredits, setPeCredits] = useState(3);
   const [oeCredits, setOeCredits] = useState(3);
+  const [electiveCredits, setElectiveCredits] = useState({});
   const [selectedFixSub, setSelectedFixSub] = useState('');
   const [selectedFixDay, setSelectedFixDay] = useState('');
   const [selectedFixTime, setSelectedFixTime] = useState('');
@@ -76,7 +79,8 @@ const GenerateTimetable = () => {
     if (activeProg === 'PG') {
       return [1, 2, 3, 4].includes(s);
     }
-    return s === 1 || s === 2;
+    // UG: Semesters 1–7 support both Dynamic and Static entry modes
+    return [1, 2, 3, 4, 5, 6, 7].includes(s);
   };
 
   const handleEntryModeChange = (mode) => {
@@ -402,7 +406,7 @@ const GenerateTimetable = () => {
     }
   };
 
-  const handleSaveSemesterInputs = (semNum) => {
+  const handleSaveSemesterInputs = async (semNum) => {
     const s = semNum || config.semester;
     setAllDivisions(prev => ({ ...prev, [s]: divisions }));
     setAllFacultyMappings(prev => ({ ...prev, [s]: facultyMapping }));
@@ -411,6 +415,19 @@ const GenerateTimetable = () => {
     setAllEntryModes(prev => ({ ...prev, [s]: entryMode }));
     setAllStartTimes(prev => ({ ...prev, [s]: startTime }));
     setSavedSemesters(prev => ({ ...prev, [s]: true }));
+
+    // Persist updated teacher working hours to database for this semester
+    try {
+      const currentSemWorkloads = calculateDynamicWorkloadsFrom(facultyMapping);
+      await api.post('/teachers/workload', {
+        semester: s,
+        teacherWorkloads: currentSemWorkloads
+      });
+      await fetchFaculties();
+    } catch (err) {
+      console.error('Error saving teacher workloads to database:', err);
+    }
+
     alert(`Semester ${s} inputs saved successfully!`);
   };
 
@@ -463,8 +480,101 @@ const GenerateTimetable = () => {
     if (config.semester && config.branch) {
       fetchSubjects(program || 'UG');
       fetchFaculties();
+      fetchHistoricalRankings(program || 'UG');
     }
   }, [config.semester, config.branch, program]);
+
+  const normalizeSubjectTitle = (name) => {
+    return (name || '')
+      .toLowerCase()
+      .replace(/\b(ai\s*(&|and)\s*ml|aiml)\b/gi, 'artificial intelligence and machine learning')
+      .replace(/\b(laboratory|labs|lab)\b/gi, '')
+      .replace(/[–—-]/g, ' ')
+      .replace(/[^a-z0-9 ]/g, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+  };
+
+  const findCorrespondingTheorySubject = (labSub, subjectList) => {
+    if (!labSub) return null;
+    if ((labSub.lectureHours || 0) > 0 || (labSub.tutorialHours || 0) > 0) {
+      return labSub;
+    }
+
+    const normLab = normalizeSubjectTitle(labSub.subjectName);
+    const candidates = (subjectList || subjects).filter(s =>
+      s._id !== labSub._id &&
+      s.semester === labSub.semester &&
+      (s.program || 'UG') === (labSub.program || 'UG') &&
+      ((s.lectureHours || 0) > 0 || s.subjectType === 'theory' || s.subjectType === 'elective')
+    );
+
+    let match = candidates.find(c => normalizeSubjectTitle(c.subjectName) === normLab);
+    if (match) return match;
+
+    match = candidates.find(c => {
+      const normC = normalizeSubjectTitle(c.subjectName);
+      return normLab.length > 5 && normC.length > 5 && (normLab.includes(normC) || normC.includes(normLab));
+    });
+    if (match) return match;
+
+    const labWords = normLab.split(' ').filter(w => w.length > 3);
+    if (labWords.length > 0) {
+      let bestScore = 0;
+      let bestCandidate = null;
+      candidates.forEach(c => {
+        const cWords = normalizeSubjectTitle(c.subjectName).split(' ').filter(w => w.length > 3);
+        const overlap = labWords.filter(w => cWords.includes(w)).length;
+        if (overlap > bestScore && overlap >= Math.min(2, labWords.length)) {
+          bestScore = overlap;
+          bestCandidate = c;
+        }
+      });
+      if (bestCandidate) return bestCandidate;
+    }
+
+    return null;
+  };
+
+  const fetchHistoricalRankings = async (prog = program || 'UG') => {
+    try {
+      const res = await api.get(`/experience/rankings?semester=${config.semester}&program=${prog}`);
+      if (res.data?.success && res.data?.data) {
+        setHistoricalRankings(res.data.data);
+      }
+    } catch (err) {
+      console.error('Error fetching historical experience rankings:', err);
+    }
+  };
+
+  const handleExperienceFileUpload = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setImportingExperience(true);
+    const reader = new FileReader();
+    reader.onload = async () => {
+      try {
+        const base64 = reader.result;
+        const res = await api.post('/experience/import', { base64, fileName: file.name });
+        if (res.data?.success) {
+          alert(`Historical allotment records imported successfully! (${res.data.data.totalRecordsProcessed} records)`);
+          await fetchHistoricalRankings(program || 'UG');
+        }
+      } catch (err) {
+        console.error('Import error:', err);
+        alert('Error importing file: ' + (err.response?.data?.error || err.message));
+      } finally {
+        setImportingExperience(false);
+        e.target.value = null;
+      }
+    };
+    reader.onerror = () => {
+      setImportingExperience(false);
+      alert('Failed to read file.');
+    };
+    reader.readAsDataURL(file);
+  };
 
   const fetchFaculties = async () => {
     try {
@@ -486,19 +596,67 @@ const GenerateTimetable = () => {
       const oeSub = res.data.data.find(s => (s.subjectCode || '').includes('UCSO') || (s.subjectName || '').toLowerCase().includes('open'));
       if (oeSub) setOeCredits(oeSub.lectureHours || oeSub.credits || 3);
 
-      // Initialize mapping
-      const initialMap = {};
-      res.data.data.forEach(sub => {
-        initialMap[sub._id] = {
-          theory: '',
-          lab: []
-        };
-      });
-      setFacultyMapping(initialMap);
+      // Initialize or restore mapping
+      const savedMap = allFacultyMappings[config.semester];
+      if (savedMap && Object.keys(savedMap).length > 0) {
+        // Sync Lab Assistant 1 (lab[0]) with Theory Faculty for all divisions
+        const syncedMap = { ...savedMap };
+        divisions.forEach(div => {
+          if (!syncedMap[div.name]) syncedMap[div.name] = {};
+          res.data.data.forEach(sub => {
+            if (sub.practicalHours > 0) {
+              const theorySub = findCorrespondingTheorySubject(sub, res.data.data);
+              const assignedTheoryId = theorySub ? (syncedMap[div.name]?.[theorySub._id]?.theory) : null;
+              const curLab = syncedMap[div.name]?.[sub._id]?.lab || ['', ''];
+              const newLab = [assignedTheoryId || '', curLab[1] || ''];
+              if (newLab[0] && newLab[0] === newLab[1]) {
+                newLab[1] = '';
+              }
+              syncedMap[div.name][sub._id] = {
+                ...(syncedMap[div.name][sub._id] || {}),
+                lab: newLab
+              };
+            }
+          });
+        });
+        setFacultyMapping(syncedMap);
+      } else {
+        const initialMap = {};
+        divisions.forEach(div => {
+          initialMap[div.name] = {};
+          res.data.data.forEach(sub => {
+            initialMap[div.name][sub._id] = {
+              theory: '',
+              lab: ['', '']
+            };
+          });
+        });
+        setFacultyMapping(initialMap);
+      }
       setResult(null);
     } catch (err) {
       console.error('Error fetching subjects', err);
     }
+  };
+
+  const getTeacherOtherSemestersWorkload = (teacher, currentSem) => {
+    if (!teacher) return 0;
+    let otherHours = 0;
+    if (teacher.semesterWorkloads) {
+      const semMap = teacher.semesterWorkloads instanceof Map 
+        ? Object.fromEntries(teacher.semesterWorkloads)
+        : teacher.semesterWorkloads;
+      Object.entries(semMap).forEach(([semStr, hrs]) => {
+        if (parseInt(semStr, 10) !== parseInt(currentSem, 10)) {
+          otherHours += (Number(hrs) || 0);
+        }
+      });
+    } else if (teacher.currentWorkload) {
+      if (!savedSemesters[currentSem]) {
+        otherHours = Number(teacher.currentWorkload) || 0;
+      }
+    }
+    return otherHours;
   };
 
   const calculateDynamicWorkloadsFrom = (mapping) => {
@@ -527,6 +685,16 @@ const GenerateTimetable = () => {
   };
 
   const handleTheorySelect = (divName, subjectId, teacherId) => {
+    // Find all lab subjects that correspond to this theory subject
+    const relatedLabSubs = subjects.filter(sub => {
+      if (sub.practicalHours > 0) {
+        if (sub._id === subjectId) return true;
+        const th = findCorrespondingTheorySubject(sub, subjects);
+        return th && th._id === subjectId;
+      }
+      return false;
+    });
+
     if (teacherId) {
       const tempMapping = { 
         ...facultyMapping, 
@@ -535,29 +703,69 @@ const GenerateTimetable = () => {
            [subjectId]: { ...((facultyMapping[divName] || {})[subjectId] || {}), theory: teacherId } 
         } 
       };
+
+      // Also set Lab Assistant 1 (lab[0]) for all corresponding lab subjects
+      relatedLabSubs.forEach(labSub => {
+        const curLab = tempMapping[divName]?.[labSub._id]?.lab || ['', ''];
+        const newLab = [...curLab];
+        newLab[0] = teacherId;
+        if (newLab[1] === teacherId) newLab[1] = ''; // Ensure Assistant 1 & 2 are never the same
+        tempMapping[divName][labSub._id] = {
+          ...(tempMapping[divName][labSub._id] || {}),
+          lab: newLab
+        };
+      });
+
       const tempWorkloads = calculateDynamicWorkloadsFrom(tempMapping);
       const teacher = faculties.find(f => f._id === teacherId);
-      const totalRequested = (teacher.currentWorkload || 0) + tempWorkloads[teacherId];
+      const otherWorkload = getTeacherOtherSemestersWorkload(teacher, config.semester);
+      const totalRequested = otherWorkload + (tempWorkloads[teacherId] || 0);
       const maxAllowed = getFacultyMaxWorkload(teacherId);
       
       if (totalRequested > maxAllowed) {
-        const remaining = maxAllowed - (teacher.currentWorkload || 0) - ((calculateDynamicWorkloadsFrom(facultyMapping)[teacherId])||0);
-        alert(`Cannot assign ${teacher.name}! Their working hours would be exceeded.\nThey only have ${remaining} hours remaining based on their Role.`);
+        const currentThisSem = (calculateDynamicWorkloadsFrom(facultyMapping)[teacherId]) || 0;
+        const remaining = maxAllowed - otherWorkload - currentThisSem;
+        alert(`Cannot assign ${teacher.name}! Their working hours would be exceeded.\nThey only have ${Math.max(0, remaining)} hours remaining based on their Role.`);
         return;
       }
     }
     
-    setFacultyMapping(prev => ({
-      ...prev,
-      [divName]: {
-        ...(prev[divName] || {}),
-        [subjectId]: { ...((prev[divName] || {})[subjectId] || {}), theory: teacherId }
-      }
-    }));
+    setFacultyMapping(prev => {
+      const nextDivMap = { ...(prev[divName] || {}) };
+      nextDivMap[subjectId] = { ...(nextDivMap[subjectId] || {}), theory: teacherId };
+
+      relatedLabSubs.forEach(labSub => {
+        const curLab = nextDivMap[labSub._id]?.lab || ['', ''];
+        const newLab = [...curLab];
+        newLab[0] = teacherId || '';
+        // If Lab Assistant 2 was already this teacher, clear Lab Assistant 2
+        if (newLab[1] === teacherId) {
+          newLab[1] = '';
+        }
+        nextDivMap[labSub._id] = {
+          ...(nextDivMap[labSub._id] || {}),
+          lab: newLab
+        };
+      });
+
+      return {
+        ...prev,
+        [divName]: nextDivMap
+      };
+    });
   };
 
   const handleLabSelect = (divName, subjectId, teacherId, index) => {
     if (teacherId) {
+      // Validate that Lab Assistant 1 and 2 are never the same
+      const labSub = subjects.find(s => s._id === subjectId);
+      const theorySub = findCorrespondingTheorySubject(labSub, subjects);
+      const labAssistant1Id = theorySub ? (facultyMapping[divName]?.[theorySub._id]?.theory) : (facultyMapping[divName]?.[subjectId]?.lab?.[0]);
+      if (index === 1 && teacherId === labAssistant1Id) {
+        alert('Lab Assistant 1 and Lab Assistant 2 cannot be the same teacher.');
+        return;
+      }
+
       const currentLab = (facultyMapping[divName]?.[subjectId]?.lab) || ['', ''];
       const newLab = [...currentLab];
       newLab[index] = teacherId;
@@ -572,12 +780,14 @@ const GenerateTimetable = () => {
       
       const tempWorkloads = calculateDynamicWorkloadsFrom(tempMapping);
       const teacher = faculties.find(f => f._id === teacherId);
-      const totalRequested = (teacher.currentWorkload || 0) + tempWorkloads[teacherId];
+      const otherWorkload = getTeacherOtherSemestersWorkload(teacher, config.semester);
+      const totalRequested = otherWorkload + (tempWorkloads[teacherId] || 0);
       const maxAllowed = getFacultyMaxWorkload(teacherId);
       
       if (totalRequested > maxAllowed) {
-        const remaining = maxAllowed - (teacher.currentWorkload || 0) - ((calculateDynamicWorkloadsFrom(facultyMapping)[teacherId])||0);
-        alert(`Cannot assign ${teacher.name}! Their working hours would be exceeded.\nThey only have ${remaining} hours remaining based on their Role.`);
+        const currentThisSem = (calculateDynamicWorkloadsFrom(facultyMapping)[teacherId]) || 0;
+        const remaining = maxAllowed - otherWorkload - currentThisSem;
+        alert(`Cannot assign ${teacher.name}! Their working hours would be exceeded.\nThey only have ${Math.max(0, remaining)} hours remaining based on their Role.`);
         return;
       }
     }
@@ -699,6 +909,113 @@ const GenerateTimetable = () => {
     });
   };
 
+  const getElectiveConfig = (subs) => {
+    const isOE = (s) => 
+      s.subjectCategory === 'Open Elective' ||
+      (s.subjectCode || '').toUpperCase().includes('UCSO') ||
+      (s.subjectName || '').toLowerCase().includes('open');
+
+    const peSubs = (subs || []).filter(s => 
+      !isOE(s) && (
+        (s.subjectCategory && s.subjectCategory.toLowerCase().includes('elective')) ||
+        s.elective === true ||
+        s.subjectType === 'elective' ||
+        (s.subjectCode || '').toUpperCase().includes('UCSE') ||
+        (s.subjectCode || '').toUpperCase().includes('PCSE') ||
+        (s.subjectName || '').toLowerCase().includes('program elective') ||
+        (s.subjectName || '').toLowerCase().includes('elective')
+      )
+    );
+
+    const oeSubs = (subs || []).filter(isOE);
+
+    // Group PE subjects by Category or naming
+    const peGroupsMap = new Map();
+    peSubs.forEach(s => {
+      let groupKey = 'pe_1';
+      let groupName = 'Program Elective 1';
+      const cat = s.subjectCategory || '';
+
+      if (/elective\s*1/i.test(cat)) {
+        groupKey = 'pe_1';
+        groupName = 'Program Elective 1';
+      } else if (/elective\s*2/i.test(cat)) {
+        groupKey = 'pe_2';
+        groupName = 'Program Elective 2';
+      } else if (/elective\s*3/i.test(cat)) {
+        groupKey = 'pe_3';
+        groupName = 'Program Elective 3';
+      } else if (/elective\s*1|pe\s*1|pe-1/i.test(s.subjectName || '') || /e1|pe1/i.test(s.subjectCode || '')) {
+        groupKey = 'pe_1';
+        groupName = 'Program Elective 1';
+      } else if (/elective\s*2|pe\s*2|pe-2/i.test(s.subjectName || '') || /e2|pe2/i.test(s.subjectCode || '')) {
+        groupKey = 'pe_2';
+        groupName = 'Program Elective 2';
+      } else if (/elective\s*3|pe\s*3|pe-3/i.test(s.subjectName || '') || /e3|pe3/i.test(s.subjectCode || '')) {
+        groupKey = 'pe_3';
+        groupName = 'Program Elective 3';
+      } else if (cat && cat !== 'Compulsory Subject') {
+        groupKey = `pe_${cat.toLowerCase().replace(/\s+/g, '_')}`;
+        groupName = `Program Elective (${cat})`;
+      } else {
+        groupKey = 'pe_1';
+        groupName = 'Program Elective 1';
+      }
+
+      if (!peGroupsMap.has(groupKey)) {
+        peGroupsMap.set(groupKey, {
+          id: groupKey,
+          name: groupName,
+          category: cat,
+          subjects: []
+        });
+      }
+      peGroupsMap.get(groupKey).subjects.push(s);
+    });
+
+    const peGroups = Array.from(peGroupsMap.values());
+    if (peGroups.length === 1 && peGroups[0].name === 'Program Elective 1') {
+      peGroups[0].name = 'Program Elective';
+    }
+
+    return {
+      peGroups,
+      oeGroup: oeSubs.length > 0 ? { id: 'oe', name: 'Open Elective', subjects: oeSubs } : null
+    };
+  };
+
+  const handleElectiveGroupCreditsChange = (groupId, groupSubs, credits) => {
+    const validCredits = Math.max(1, Math.min(6, credits));
+    setElectiveCredits(prev => ({ ...prev, [groupId]: validCredits }));
+    if (groupId === 'oe') setOeCredits(validCredits);
+    else setPeCredits(validCredits);
+
+    const subIds = new Set(groupSubs.map(s => s._id));
+    setSubjects(prev => prev.map(sub => {
+      if (subIds.has(sub._id)) {
+        return { ...sub, lectureHours: validCredits };
+      }
+      return sub;
+    }));
+  };
+
+  const handleElectiveGroupTimingChange = (groupSubs, index, field, value) => {
+    setFixedTimings(prev => {
+      const updated = { ...prev };
+      divisions.forEach(div => {
+        if (!updated[div.name]) updated[div.name] = {};
+        groupSubs.forEach(sub => {
+          const current = updated[div.name][sub._id] || [];
+          const newArr = [...current];
+          if (!newArr[index]) newArr[index] = { day: '', time: '' };
+          newArr[index] = { ...newArr[index], [field]: value };
+          updated[div.name][sub._id] = newArr;
+        });
+      });
+      return updated;
+    });
+  };
+
   const addFixedTiming = () => {
     if (!selectedFixSub || !selectedFixDay || !selectedFixTime) return;
     setFixedTimings(prev => {
@@ -766,11 +1083,31 @@ const GenerateTimetable = () => {
       const facultyMaxWorkloads = {};
       faculties.forEach(f => facultyMaxWorkloads[f._id] = getFacultyMaxWorkload(f._id));
 
+      const cleanFixedForSem = (rawFixed, sem, semSubs) => {
+        if (!rawFixed) return {};
+        const sNum = parseInt(sem);
+        if (program !== 'PG' && [5, 6, 7].includes(sNum)) {
+          const { peGroups } = getElectiveConfig(semSubs || subjects);
+          const peSubIds = new Set(peGroups.flatMap(g => g.subjects.map(s => s._id)));
+          const cleaned = {};
+          Object.entries(rawFixed).forEach(([divName, divTimings]) => {
+            cleaned[divName] = {};
+            Object.entries(divTimings || {}).forEach(([subId, slots]) => {
+              if (!peSubIds.has(subId)) {
+                cleaned[divName][subId] = slots;
+              }
+            });
+          });
+          return cleaned;
+        }
+        return rawFixed;
+      };
+
       if (genMode === 'priority') {
         const prioritySem = cycle === 'odd' ? 1 : 2;
         const semDivs = allDivisions[prioritySem] || divisions;
         const semMapping = allFacultyMappings[prioritySem] || facultyMapping;
-        const semFixed = allFixedTimings[prioritySem] || fixedTimings;
+        const semFixed = cleanFixedForSem(allFixedTimings[prioritySem] || fixedTimings, prioritySem, allSubjects[prioritySem] || subjects);
         const semStartTime = allStartTimes[prioritySem] || (prioritySem === parseInt(config.semester) ? startTime : getDefaultStartTime(prioritySem));
 
         const res = await api.post('/timetables/generate-ml', {
@@ -809,7 +1146,7 @@ const GenerateTimetable = () => {
 
           const semDivs = allDivisions[semNum] || divisions;
           const semMapping = allFacultyMappings[semNum] || facultyMapping;
-          const semFixed = allFixedTimings[semNum] || fixedTimings;
+          const semFixed = cleanFixedForSem(allFixedTimings[semNum] || fixedTimings, semNum, allSubjects[semNum] || subjects);
           const semStartTime = allStartTimes[semNum] || (semNum === parseInt(config.semester) ? startTime : getDefaultStartTime(semNum));
 
           // Provide previously generated in-memory schedules to backend for workload calculation
@@ -1068,7 +1405,8 @@ const GenerateTimetable = () => {
          
      return filteredFaculties.map(f => {
        const dynamicAllocated = dynamicWorkloads[f._id] || 0;
-       const totalUsed = (f.currentWorkload || 0) + dynamicAllocated;
+       const otherWorkload = getTeacherOtherSemestersWorkload(f, config.semester);
+       const totalUsed = otherWorkload + dynamicAllocated;
        const max = getFacultyMaxWorkload(f._id);
        
        const isCurrentlySelected = type === 'theory' 
@@ -1086,6 +1424,95 @@ const GenerateTimetable = () => {
          isDisabled: isFull && !isCurrentlySelected
        };
      });
+  };
+
+  const getLabAssistant2Options = (divName, subjectId) => {
+    const sub = subjects.find(s => s._id === subjectId);
+    if (!sub) return [];
+
+    const requiredHours = sub.practicalHours || 0;
+    const dynamicWorkloads = calculateDynamicWorkloadsFrom(facultyMapping);
+
+    // Get Lab Assistant 1 (theory teacher) to exclude from options
+    const theorySub = findCorrespondingTheorySubject(sub, subjects);
+    const labAssistant1Id = theorySub ? (facultyMapping[divName]?.[theorySub._id]?.theory) : null;
+
+    const rankingInfo = historicalRankings[subjectId];
+    const hasHistorical = rankingInfo && rankingInfo.hasHistoricalRecords && Array.isArray(rankingInfo.rankings) && rankingInfo.rankings.length > 0;
+
+    let candidateList = [];
+
+    if (hasHistorical) {
+      // Historical experience ranking
+      candidateList = rankingInfo.rankings
+        .filter(r => r.teacherId !== labAssistant1Id) // Cannot be Lab Assistant 1
+        .map(r => {
+          const f = faculties.find(fac => fac._id === r.teacherId);
+          if (!f) return null;
+
+          const dynamicAllocated = dynamicWorkloads[f._id] || 0;
+          const otherWorkload = getTeacherOtherSemestersWorkload(f, config.semester);
+          const totalUsed = otherWorkload + dynamicAllocated;
+          const max = getFacultyMaxWorkload(f._id);
+
+          const isCurrentlySelected = facultyMapping[divName]?.[subjectId]?.lab?.[1] === f._id;
+          const isFull = !isCurrentlySelected && (totalUsed + requiredHours > max);
+
+          const countStr = `${r.allotmentCount} allotment${r.allotmentCount === 1 ? '' : 's'}`;
+          const label = `${f.name} – ${countStr} (${totalUsed}/${max} hrs)${isFull && !isCurrentlySelected ? ' - NO HOURS LEFT' : ''}`;
+
+          return {
+            value: f._id,
+            label,
+            isDisabled: isFull && !isCurrentlySelected,
+            count: r.allotmentCount
+          };
+        })
+        .filter(Boolean);
+    }
+
+    // Fallback: if no historical records or candidate list is empty
+    if (candidateList.length === 0) {
+      let filteredFaculties = faculties.filter(f => f._id !== labAssistant1Id);
+      
+      const subNameLower = (sub.subjectName || '').toLowerCase();
+      const subDeptLower = (sub.department || '').toLowerCase();
+      const isMath = subNameLower.includes('math') || subDeptLower.includes('math');
+      const isPhysics = subNameLower.includes('phys') || subDeptLower.includes('phys');
+      const isChemistry = subNameLower.includes('chem') || subDeptLower.includes('chem');
+      const isElectrical = subNameLower.includes('elect') || subDeptLower.includes('eee');
+
+      if (isMath) {
+        filteredFaculties = filteredFaculties.filter(f => (f.department || '').toLowerCase().includes('math'));
+      } else if (isPhysics) {
+        filteredFaculties = filteredFaculties.filter(f => (f.department || '').toLowerCase().includes('phys'));
+      } else if (isChemistry) {
+        filteredFaculties = filteredFaculties.filter(f => (f.department || '').toLowerCase().includes('chem'));
+      } else if (isElectrical) {
+        filteredFaculties = filteredFaculties.filter(f => (f.department || '').toLowerCase().includes('elect'));
+      } else {
+        filteredFaculties = filteredFaculties.filter(f => (f.department || '').toLowerCase().includes('cse') || (f.department || '').toLowerCase().includes('computer'));
+      }
+
+      candidateList = filteredFaculties.map(f => {
+        const dynamicAllocated = dynamicWorkloads[f._id] || 0;
+        const otherWorkload = getTeacherOtherSemestersWorkload(f, config.semester);
+        const totalUsed = otherWorkload + dynamicAllocated;
+        const max = getFacultyMaxWorkload(f._id);
+
+        const isCurrentlySelected = facultyMapping[divName]?.[subjectId]?.lab?.[1] === f._id;
+        const isFull = !isCurrentlySelected && (totalUsed + requiredHours > max);
+
+        return {
+          value: f._id,
+          label: `${f.name} (${totalUsed}/${max} hrs)${isFull && !isCurrentlySelected ? ' - NO HOURS LEFT' : ''}`,
+          isDisabled: isFull && !isCurrentlySelected,
+          count: 0
+        };
+      });
+    }
+
+    return candidateList;
   };
 
   // Removed duplicate functions handleFixedTimingChange and addFixedTiming
@@ -1439,7 +1866,7 @@ const GenerateTimetable = () => {
                 <select 
                   className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl text-sm font-medium focus:ring-2 focus:ring-indigo-500 transition-all outline-none"
                   value={config.semester}
-                  onChange={(e) => setConfig({...config, semester: parseInt(e.target.value)})}
+                  onChange={(e) => handleSelectSemester(parseInt(e.target.value))}
                 >
                   {getAllSemestersForCycle().map(s => (
                     <option key={s} value={s}>Semester {s} {s === (cycle === 'odd' ? 1 : 2) ? '(Priority)' : '(Grouped)'}</option>
@@ -1576,184 +2003,211 @@ const GenerateTimetable = () => {
                   entryMode === 'dynamic'
                     ? (program === 'PG'
                         ? "Dynamic Entry: Subjects are scheduled automatically by AI. Configure custom slots below if needed."
-                        : "Dynamic Entry: Day & Time slots are active for Mathematics & Chemistry only (CSE). Configure other custom slots below if needed.")
+                        : [5, 6, 7].includes(parseInt(config.semester))
+                          ? "Dynamic Entry: Program Electives auto-scheduled by AI. Day & Time slots active for labs and subjects with labs. Configure other custom slots below if needed."
+                          : "Dynamic Entry: Day & Time slots are active for Mathematics & Chemistry only (CSE). Configure other custom slots below if needed.")
                     : "Static Entry: Set day & time slots beside each subject in the Map Faculty section, or configure custom slot timings below."
                 )}
-                {program !== 'PG' && (config.semester == 5) && "Set timing for Program Elective (applied across all divisions)."}
-                {program !== 'PG' && (config.semester == 6 || config.semester == 7) && "Set timings for Program Elective & Open Elective (applied across all divisions)."}
-                {(!isEntryModeSupported(config.semester, program) && ![5, 6, 7].includes(parseInt(config.semester))) && "Force specific subjects to be scheduled at an exact day and time."}
+                {(() => {
+                  const { peGroups, oeGroup } = getElectiveConfig(subjects);
+                  const isUGAutoPE = program !== 'PG' && [5, 6, 7].includes(parseInt(config.semester));
+                  if (isUGAutoPE) {
+                    if (oeGroup) {
+                      return "Set timings for Open Elective (applied across all divisions). Program Electives are automatically scheduled in morning or last available periods.";
+                    }
+                    if (peGroups.length > 0) {
+                      return "Program Electives are automatically scheduled by the AI algorithm in morning or last available periods across all divisions.";
+                    }
+                  }
+                  if (peGroups.length > 0 || oeGroup) {
+                    const parts = [];
+                    if (peGroups.length > 0) parts.push(`${peGroups.length} Program Elective${peGroups.length > 1 ? 's' : ''}`);
+                    if (oeGroup) parts.push("Open Elective");
+                    return `Set timings for ${parts.join(' & ')} (applied across all divisions).`;
+                  }
+                  if (!isEntryModeSupported(config.semester, program)) {
+                    return "Force specific subjects to be scheduled at an exact day and time.";
+                  }
+                  return "";
+                })()}
               </p>
             </div>
 
-            {/* Sem 5 Elective Timing (Dynamic Inputs based on Credits) */}
-            {(parseInt(config.semester) === 5) && (
-              <div className="bg-indigo-50/70 p-3.5 rounded-xl border border-indigo-100">
-                <div className="flex justify-between items-center mb-2.5 border-b border-indigo-100 pb-2">
-                  <div>
-                    <h4 className="text-xs font-bold text-indigo-900">Program Elective Timing</h4>
-                    <p className="text-[10px] text-indigo-600">Applied to all divisions</p>
-                  </div>
-                  <div className="flex items-center gap-1.5 bg-white px-2 py-0.5 rounded-lg border border-indigo-200 shadow-xs">
-                    <label className="text-[10px] font-bold text-indigo-900">Credits:</label>
-                    <input 
-                      type="number" 
-                      min="1" 
-                      max="6" 
-                      value={peCredits}
-                      onChange={e => handleElectiveCreditsChange('pe', parseInt(e.target.value) || 1)}
-                      className="w-8 p-0.5 bg-indigo-50 border border-indigo-300 rounded text-xs text-center font-bold text-indigo-900 outline-none"
-                    />
-                  </div>
-                </div>
-                <div className="space-y-2">
-                  {Array.from({ length: peCredits }).map((_, idx) => (
-                    <div key={idx} className="flex gap-2 items-center">
-                      <span className="text-[10px] text-indigo-600 font-bold w-12 shrink-0">Slot {idx + 1}</span>
-                      <select 
-                        className="w-1/2 min-w-0 p-1.5 bg-white border border-gray-200 rounded-lg text-xs outline-none font-medium text-gray-700 focus:border-indigo-500"
-                        value={(() => {
-                          const peSub = subjects.find(s => (s.subjectCode || '').includes('UCSE') || (s.subjectName || '').toLowerCase().includes('elective') || s.subjectType === 'elective');
-                          return peSub ? fixedTimings[divisions[0]?.name]?.[peSub._id]?.[idx]?.day || '' : '';
-                        })()}
-                        onChange={e => handleGlobalElectiveTimingChange('pe', idx, 'day', e.target.value)}
-                      >
-                        <option value="">Day</option>
-                        <option value="N/A">N/A</option>
-                        <option value="Monday">Mon</option>
-                        <option value="Tuesday">Tue</option>
-                        <option value="Wednesday">Wed</option>
-                        <option value="Thursday">Thu</option>
-                        <option value="Friday">Fri</option>
-                        <option value="Saturday">Sat</option>
-                      </select>
-                      <select 
-                        className="w-1/2 min-w-0 p-1.5 bg-white border border-gray-200 rounded-lg text-xs outline-none font-medium text-gray-700 focus:border-indigo-500"
-                        value={(() => {
-                          const peSub = subjects.find(s => (s.subjectCode || '').includes('UCSE') || (s.subjectName || '').toLowerCase().includes('elective') || s.subjectType === 'elective');
-                          return peSub ? fixedTimings[divisions[0]?.name]?.[peSub._id]?.[idx]?.time || '' : '';
-                        })()}
-                        onChange={e => handleGlobalElectiveTimingChange('pe', idx, 'time', e.target.value)}
-                      >
-                        <option value="">Time</option>
-                        <option value="N/A">N/A</option>
-                        {["08:00", "09:00", "10:30", "11:30", "12:30", "14:30", "15:30"].map(t => <option key={t} value={t}>{t}</option>)}
-                      </select>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
+            {/* Dynamic Elective Timings (Program Elective(s) & Open Elective) */}
+            {(() => {
+              const { peGroups, oeGroup } = getElectiveConfig(subjects);
+              const isUGAutoPE = program !== 'PG' && [5, 6, 7].includes(parseInt(config.semester));
+              if (peGroups.length === 0 && !oeGroup) return null;
 
-            {/* Sem 6 & Sem 7 Elective Timings (Dynamic Inputs based on Credits) */}
-            {(parseInt(config.semester) === 6 || parseInt(config.semester) === 7) && (
-              <div className="bg-indigo-50/70 p-3.5 rounded-xl border border-indigo-100 space-y-3">
-                <h4 className="text-xs font-bold text-indigo-900 border-b border-indigo-100 pb-2">Elective Timings (All Divisions)</h4>
-                
-                {/* Open Elective */}
-                <div className="bg-white p-3 rounded-lg border border-indigo-100 shadow-xs space-y-2">
-                  <div className="flex justify-between items-center mb-1 border-b border-indigo-50 pb-1.5">
-                    <h5 className="text-[11px] font-bold text-indigo-800">Open Elective</h5>
-                    <div className="flex items-center gap-1.5 bg-indigo-50 px-2 py-0.5 rounded border border-indigo-200">
-                      <label className="text-[10px] font-bold text-indigo-900">Credits:</label>
-                      <input 
-                        type="number" 
-                        min="1" 
-                        max="6" 
-                        value={oeCredits}
-                        onChange={e => handleElectiveCreditsChange('oe', parseInt(e.target.value) || 1)}
-                        className="w-8 p-0.5 bg-white border border-indigo-300 rounded text-xs text-center font-bold text-indigo-900 outline-none"
-                      />
-                    </div>
+              return (
+                <div className="bg-indigo-50/70 p-3.5 rounded-xl border border-indigo-100 space-y-3">
+                  <div className="flex justify-between items-center border-b border-indigo-100 pb-2">
+                    <h4 className="text-xs font-bold text-indigo-900">
+                      Elective Timings (All Divisions)
+                    </h4>
+                    <span className="text-[10px] text-indigo-600 font-bold">
+                      {isUGAutoPE 
+                        ? (peGroups.length > 0 ? 'PE: Auto-Scheduled • Morning/Last Period' : 'Applied to all divisions')
+                        : (peGroups.length > 1 ? `${peGroups.length} Program Electives Configured` : 'Applied to all divisions')}
+                    </span>
                   </div>
-                  {Array.from({ length: oeCredits }).map((_, idx) => (
-                    <div key={idx} className="flex gap-2 items-center">
-                      <span className="text-[10px] text-gray-500 font-bold w-12 shrink-0">Slot {idx + 1}</span>
-                      <select 
-                        className="w-1/2 min-w-0 p-1.5 bg-white border border-gray-200 rounded text-xs outline-none font-medium text-gray-700 focus:border-indigo-500"
-                        value={(() => {
-                          const oeSub = subjects.find(s => (s.subjectCode || '').includes('UCSO') || (s.subjectName || '').toLowerCase().includes('open'));
-                          return oeSub ? fixedTimings[divisions[0]?.name]?.[oeSub._id]?.[idx]?.day || '' : '';
-                        })()}
-                        onChange={e => handleGlobalElectiveTimingChange('oe', idx, 'day', e.target.value)}
-                      >
-                        <option value="">Day</option>
-                        <option value="N/A">N/A</option>
-                        <option value="Monday">Mon</option>
-                        <option value="Tuesday">Tue</option>
-                        <option value="Wednesday">Wed</option>
-                        <option value="Thursday">Thu</option>
-                        <option value="Friday">Fri</option>
-                        <option value="Saturday">Sat</option>
-                      </select>
-                      <select 
-                        className="w-1/2 min-w-0 p-1.5 bg-white border border-gray-200 rounded text-xs outline-none font-medium text-gray-700 focus:border-indigo-500"
-                        value={(() => {
-                          const oeSub = subjects.find(s => (s.subjectCode || '').includes('UCSO') || (s.subjectName || '').toLowerCase().includes('open'));
-                          return oeSub ? fixedTimings[divisions[0]?.name]?.[oeSub._id]?.[idx]?.time || '' : '';
-                        })()}
-                        onChange={e => handleGlobalElectiveTimingChange('oe', idx, 'time', e.target.value)}
-                      >
-                        <option value="">Time</option>
-                        <option value="N/A">N/A</option>
-                        {["08:00", "09:00", "10:30", "11:30", "12:30", "14:30", "15:30"].map(t => <option key={t} value={t}>{t}</option>)}
-                      </select>
-                    </div>
-                  ))}
-                </div>
 
-                {/* Program Elective */}
-                <div className="bg-white p-3 rounded-lg border border-indigo-100 shadow-xs space-y-2">
-                  <div className="flex justify-between items-center mb-1 border-b border-indigo-50 pb-1.5">
-                    <h5 className="text-[11px] font-bold text-indigo-800">Program Elective</h5>
-                    <div className="flex items-center gap-1.5 bg-indigo-50 px-2 py-0.5 rounded border border-indigo-200">
-                      <label className="text-[10px] font-bold text-indigo-900">Credits:</label>
-                      <input 
-                        type="number" 
-                        min="1" 
-                        max="6" 
-                        value={peCredits}
-                        onChange={e => handleElectiveCreditsChange('pe', parseInt(e.target.value) || 1)}
-                        className="w-8 p-0.5 bg-white border border-indigo-300 rounded text-xs text-center font-bold text-indigo-900 outline-none"
-                      />
+                  {/* Open Elective Section */}
+                  {oeGroup && (
+                    <div className="bg-white p-3 rounded-lg border border-indigo-100 shadow-xs space-y-2">
+                      <div className="flex justify-between items-center mb-1 border-b border-indigo-50 pb-1.5">
+                        <div>
+                          <h5 className="text-[11px] font-bold text-indigo-800">Open Elective</h5>
+                          {oeGroup.subjects.length > 0 && (
+                            <p className="text-[9px] text-gray-400 truncate max-w-[220px]">
+                              {oeGroup.subjects.map(s => s.subjectName).join(', ')}
+                            </p>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-1.5 bg-indigo-50 px-2 py-0.5 rounded border border-indigo-200">
+                          <label className="text-[10px] font-bold text-indigo-900">Credits:</label>
+                          <input 
+                            type="number" 
+                            min="1" 
+                            max="6" 
+                            value={electiveCredits['oe'] !== undefined ? electiveCredits['oe'] : oeCredits}
+                            onChange={e => handleElectiveGroupCreditsChange('oe', oeGroup.subjects, parseInt(e.target.value) || 1)}
+                            className="w-8 p-0.5 bg-white border border-indigo-300 rounded text-xs text-center font-bold text-indigo-900 outline-none"
+                          />
+                        </div>
+                      </div>
+                      {Array.from({ length: electiveCredits['oe'] !== undefined ? electiveCredits['oe'] : oeCredits }).map((_, idx) => (
+                        <div key={idx} className="flex gap-2 items-center">
+                          <span className="text-[10px] text-gray-500 font-bold w-12 shrink-0">Slot {idx + 1}</span>
+                          <select 
+                            className="w-1/2 min-w-0 p-1.5 bg-white border border-gray-200 rounded text-xs outline-none font-medium text-gray-700 focus:border-indigo-500"
+                            value={(() => {
+                              const repSub = oeGroup.subjects[0];
+                              return repSub ? fixedTimings[divisions[0]?.name]?.[repSub._id]?.[idx]?.day || '' : '';
+                            })()}
+                            onChange={e => handleElectiveGroupTimingChange(oeGroup.subjects, idx, 'day', e.target.value)}
+                          >
+                            <option value="">Day</option>
+                            <option value="N/A">N/A</option>
+                            <option value="Monday">Mon</option>
+                            <option value="Tuesday">Tue</option>
+                            <option value="Wednesday">Wed</option>
+                            <option value="Thursday">Thu</option>
+                            <option value="Friday">Fri</option>
+                            <option value="Saturday">Sat</option>
+                          </select>
+                          <select 
+                            className="w-1/2 min-w-0 p-1.5 bg-white border border-gray-200 rounded text-xs outline-none font-medium text-gray-700 focus:border-indigo-500"
+                            value={(() => {
+                              const repSub = oeGroup.subjects[0];
+                              return repSub ? fixedTimings[divisions[0]?.name]?.[repSub._id]?.[idx]?.time || '' : '';
+                            })()}
+                            onChange={e => handleElectiveGroupTimingChange(oeGroup.subjects, idx, 'time', e.target.value)}
+                          >
+                            <option value="">Time</option>
+                            <option value="N/A">N/A</option>
+                            {["08:00", "09:00", "10:30", "11:30", "12:30", "14:30", "15:30"].map(t => <option key={t} value={t}>{t}</option>)}
+                          </select>
+                        </div>
+                      ))}
                     </div>
-                  </div>
-                  {Array.from({ length: peCredits }).map((_, idx) => (
-                    <div key={idx} className="flex gap-2 items-center">
-                      <span className="text-[10px] text-gray-500 font-bold w-12 shrink-0">Slot {idx + 1}</span>
-                      <select 
-                        className="w-1/2 min-w-0 p-1.5 bg-white border border-gray-200 rounded text-xs outline-none font-medium text-gray-700 focus:border-indigo-500"
-                        value={(() => {
-                          const peSub = subjects.find(s => (s.subjectCode || '').includes('UCSE') || (s.subjectName || '').toLowerCase().includes('program') || (s.subjectName || '').toLowerCase().includes('elective') || s.subjectType === 'elective');
-                          return peSub ? fixedTimings[divisions[0]?.name]?.[peSub._id]?.[idx]?.day || '' : '';
-                        })()}
-                        onChange={e => handleGlobalElectiveTimingChange('pe', idx, 'day', e.target.value)}
-                      >
-                        <option value="">Day</option>
-                        <option value="N/A">N/A</option>
-                        <option value="Monday">Mon</option>
-                        <option value="Tuesday">Tue</option>
-                        <option value="Wednesday">Wed</option>
-                        <option value="Thursday">Thu</option>
-                        <option value="Friday">Fri</option>
-                        <option value="Saturday">Sat</option>
-                      </select>
-                      <select 
-                        className="w-1/2 min-w-0 p-1.5 bg-white border border-gray-200 rounded text-xs outline-none font-medium text-gray-700 focus:border-indigo-500"
-                        value={(() => {
-                          const peSub = subjects.find(s => (s.subjectCode || '').includes('UCSE') || (s.subjectName || '').toLowerCase().includes('program') || (s.subjectName || '').toLowerCase().includes('elective') || s.subjectType === 'elective');
-                          return peSub ? fixedTimings[divisions[0]?.name]?.[peSub._id]?.[idx]?.time || '' : '';
-                        })()}
-                        onChange={e => handleGlobalElectiveTimingChange('pe', idx, 'time', e.target.value)}
-                      >
-                        <option value="">Time</option>
-                        <option value="N/A">N/A</option>
-                        {["08:00", "09:00", "10:30", "11:30", "12:30", "14:30", "15:30"].map(t => <option key={t} value={t}>{t}</option>)}
-                      </select>
+                  )}
+
+                  {/* Automated Program Elective info block for UG Sem 5, Sem 6, and Sem 7 */}
+                  {isUGAutoPE && peGroups.length > 0 && (
+                    <div className="bg-white p-3 rounded-lg border border-indigo-100 shadow-xs space-y-2">
+                      <div className="flex items-center gap-2">
+                        <span className="p-1.5 rounded-lg bg-indigo-50 text-indigo-600 font-bold text-xs flex items-center justify-center">
+                          <FiCpu size={14} />
+                        </span>
+                        <div>
+                          <h5 className="text-[11px] font-bold text-indigo-900">
+                            {peGroups.length > 1 ? `${peGroups.length} Program Electives` : 'Program Elective'} — Automated AI Assignment
+                          </h5>
+                          <span className="text-[10px] text-indigo-600 font-medium">
+                            Automatically scheduled in morning or last available period of the day (conflict-free across all divisions)
+                          </span>
+                        </div>
+                      </div>
+                      <div className="flex flex-wrap gap-1.5 pt-1.5 border-t border-indigo-50">
+                        {peGroups.flatMap(g => g.subjects).map(s => (
+                          <span key={s._id} className="text-[10px] bg-indigo-50/80 text-indigo-800 px-2 py-0.5 rounded border border-indigo-100 font-medium">
+                            {s.subjectCode ? `${s.subjectCode}: ` : ''}{s.subjectName}
+                          </span>
+                        ))}
+                      </div>
                     </div>
-                  ))}
+                  )}
+
+                  {/* Separate Program Elective Sections (Only when NOT UG Sem 5, Sem 6, or Sem 7) */}
+                  {!isUGAutoPE && peGroups.map((group) => {
+                    const groupCredits = electiveCredits[group.id] !== undefined 
+                      ? electiveCredits[group.id] 
+                      : (group.subjects[0]?.lectureHours || group.subjects[0]?.credits || peCredits);
+
+                    return (
+                      <div key={group.id} className="bg-white p-3 rounded-lg border border-indigo-100 shadow-xs space-y-2">
+                        <div className="flex justify-between items-center mb-1 border-b border-indigo-50 pb-1.5">
+                          <div>
+                            <h5 className="text-[11px] font-bold text-indigo-800">{group.name}</h5>
+                            {group.subjects.length > 0 && (
+                              <p className="text-[9px] text-gray-400 truncate max-w-[220px]">
+                                {group.subjects.map(s => s.subjectName).join(', ')}
+                              </p>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-1.5 bg-indigo-50 px-2 py-0.5 rounded border border-indigo-200">
+                            <label className="text-[10px] font-bold text-indigo-900">Credits:</label>
+                            <input 
+                              type="number" 
+                              min="1" 
+                              max="6" 
+                              value={groupCredits}
+                              onChange={e => handleElectiveGroupCreditsChange(group.id, group.subjects, parseInt(e.target.value) || 1)}
+                              className="w-8 p-0.5 bg-white border border-indigo-300 rounded text-xs text-center font-bold text-indigo-900 outline-none"
+                            />
+                          </div>
+                        </div>
+                        {Array.from({ length: groupCredits }).map((_, idx) => (
+                          <div key={idx} className="flex gap-2 items-center">
+                            <span className="text-[10px] text-gray-500 font-bold w-12 shrink-0">Slot {idx + 1}</span>
+                            <select 
+                              className="w-1/2 min-w-0 p-1.5 bg-white border border-gray-200 rounded text-xs outline-none font-medium text-gray-700 focus:border-indigo-500"
+                              value={(() => {
+                                const repSub = group.subjects[0];
+                                return repSub ? fixedTimings[divisions[0]?.name]?.[repSub._id]?.[idx]?.day || '' : '';
+                              })()}
+                              onChange={e => handleElectiveGroupTimingChange(group.subjects, idx, 'day', e.target.value)}
+                            >
+                              <option value="">Day</option>
+                              <option value="N/A">N/A</option>
+                              <option value="Monday">Mon</option>
+                              <option value="Tuesday">Tue</option>
+                              <option value="Wednesday">Wed</option>
+                              <option value="Thursday">Thu</option>
+                              <option value="Friday">Fri</option>
+                              <option value="Saturday">Sat</option>
+                            </select>
+                            <select 
+                              className="w-1/2 min-w-0 p-1.5 bg-white border border-gray-200 rounded text-xs outline-none font-medium text-gray-700 focus:border-indigo-500"
+                              value={(() => {
+                                const repSub = group.subjects[0];
+                                return repSub ? fixedTimings[divisions[0]?.name]?.[repSub._id]?.[idx]?.time || '' : '';
+                              })()}
+                              onChange={e => handleElectiveGroupTimingChange(group.subjects, idx, 'time', e.target.value)}
+                            >
+                              <option value="">Time</option>
+                              <option value="N/A">N/A</option>
+                              {["08:00", "09:00", "10:30", "11:30", "12:30", "14:30", "15:30"].map(t => <option key={t} value={t}>{t}</option>)}
+                            </select>
+                          </div>
+                        ))}
+                      </div>
+                    );
+                  })}
                 </div>
-              </div>
-            )}
+              );
+            })()}
 
             {/* Custom Slot Timings per Division */}
             <div className="pt-2 border-t border-gray-100">
@@ -2341,7 +2795,20 @@ const GenerateTimetable = () => {
                   <h3 className="text-lg font-bold text-gray-800 flex items-center">
                     <FiUsers className="mr-2 text-indigo-500" /> Map Faculty to Subjects
                   </h3>
-                  <p className="text-xs text-gray-500 mt-1">Assign faculty for each division independently.</p>
+                  <div className="flex flex-wrap items-center gap-2 mt-1">
+                    <p className="text-xs text-gray-500">Assign faculty for each division independently.</p>
+                    <label className="cursor-pointer inline-flex items-center gap-1 px-2.5 py-1 bg-purple-50 text-purple-700 hover:bg-purple-100 rounded-md text-[11px] font-semibold border border-purple-200 transition-colors shadow-2xs">
+                      <FiUpload className="text-purple-600" />
+                      {importingExperience ? 'Importing Records...' : 'Import Allotment Records (.xlsx/.csv)'}
+                      <input
+                        type="file"
+                        accept=".xlsx,.xls,.csv"
+                        className="hidden"
+                        onChange={handleExperienceFileUpload}
+                        disabled={importingExperience}
+                      />
+                    </label>
+                  </div>
                 </div>
 
                 {/* Class Start-Time Selection */}
@@ -2399,7 +2866,7 @@ const GenerateTimetable = () => {
                 </div>
               ) : (
                 <div className="p-6">
-                  {/* Timetable Entry Mode Toggle (Supported for UG Sem 1 & 2; PG Sem 1, 2, 3, 4) */}
+                  {/* Timetable Entry Mode Toggle (Supported for UG Sem 1–7; PG Sem 1–4) */}
                   {isEntryModeSupported(config.semester, program) && (
                     <div className="mb-6 bg-gradient-to-r from-indigo-50/80 via-white to-purple-50/60 p-4 rounded-2xl border border-indigo-100 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
                       <div>
@@ -2413,7 +2880,9 @@ const GenerateTimetable = () => {
                           {entryMode === 'dynamic' 
                             ? (program === 'PG'
                                 ? 'Dynamic Entry: Subjects and labs are scheduled automatically by AI. Switch to Static Entry to pin custom day and time slots.'
-                                : 'Dynamic Entry: Day and Time dropdowns enabled for Mathematics and Chemistry for CSE only. Other subjects are scheduled automatically.')
+                                : [5, 6, 7].includes(parseInt(config.semester))
+                                  ? 'Dynamic Entry: Program Electives are auto-scheduled by AI. Day & Time dropdowns available for labs and core subjects. Switch to Static Entry for full manual control.'
+                                  : 'Dynamic Entry: Day and Time dropdowns enabled for Mathematics and Chemistry for CSE only. Other subjects are scheduled automatically.')
                             : 'Static Entry: Day and Time dropdowns enabled for every subject for strict manual schedule entry.'}
                         </p>
                       </div>
@@ -2493,59 +2962,120 @@ const GenerateTimetable = () => {
                                   )}
                                   
                                   {/* Labs */}
-                                  {sub.practicalHours > 0 && (
-                                    <div className="md:col-span-2 grid grid-cols-1 sm:grid-cols-2 gap-4 mt-2 border-t border-gray-100 pt-3">
-                                      <div>
-                                        <label className="block text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-1">Lab Main Faculty</label>
-                                        <Select
-                                          options={getFacultyOptionsForSubject(div.name, sub._id, 'lab', 0)}
-                                          value={getFacultyOptionsForSubject(div.name, sub._id, 'lab', 0).find(opt => opt.value === facultyMapping[div.name]?.[sub._id]?.lab?.[0]) || null}
-                                          onChange={(selected) => handleLabSelect(div.name, sub._id, selected ? selected.value : '', 0)}
-                                          placeholder="Search Main..."
-                                          isSearchable={true}
-                                          isClearable={true}
-                                          className="text-xs"
-                                          menuPortalTarget={document.body}
-                                          styles={{ menuPortal: base => ({ ...base, zIndex: 9999 }) }}
-                                        />
+                                  {sub.practicalHours > 0 && (() => {
+                                    const theorySub = findCorrespondingTheorySubject(sub, subjects);
+                                    const assignedTheoryId = theorySub ? (facultyMapping[div.name]?.[theorySub._id]?.theory) : null;
+                                    const theoryTeacher = faculties.find(f => f._id === assignedTheoryId);
+                                    const asst2Options = getLabAssistant2Options(div.name, sub._id);
+                                    const selectedAsst2 = asst2Options.find(opt => opt.value === facultyMapping[div.name]?.[sub._id]?.lab?.[1]) || null;
+
+                                    return (
+                                      <div className="md:col-span-2 grid grid-cols-1 sm:grid-cols-2 gap-4 mt-2 border-t border-gray-100 pt-3">
+                                        {/* Lab Assistant 1 – Automatic Assignment */}
+                                        <div>
+                                          <div className="flex items-center justify-between mb-1">
+                                            <label className="block text-[10px] font-bold text-gray-500 uppercase tracking-wider">
+                                              Lab Assistant 1
+                                            </label>
+                                            <span className="text-[9px] bg-blue-50 text-blue-700 px-1.5 py-0.5 rounded font-semibold border border-blue-200">
+                                              Auto (Theory)
+                                            </span>
+                                          </div>
+                                          {theoryTeacher ? (
+                                            <div className="w-full px-3 py-2 bg-blue-50/70 border border-blue-200 rounded-md text-xs font-semibold text-blue-900 flex items-center justify-between min-h-[38px] shadow-xs">
+                                              <span className="truncate">{theoryTeacher.name}</span>
+                                              <span className="text-[10px] text-blue-600 font-normal ml-2 flex-shrink-0">
+                                                {theorySub && theorySub._id !== sub._id ? `from ${theorySub.subjectCode}` : 'Theory Faculty'}
+                                              </span>
+                                            </div>
+                                          ) : (
+                                            <div className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-md text-xs italic text-gray-400 flex items-center min-h-[38px]">
+                                              Theory faculty not assigned
+                                            </div>
+                                          )}
+                                        </div>
+
+                                        {/* Lab Assistant 2 – Experience-Based Dropdown */}
+                                        <div>
+                                          <div className="flex items-center justify-between mb-1">
+                                            <label className="block text-[10px] font-bold text-gray-500 uppercase tracking-wider">
+                                              Lab Assistant 2
+                                            </label>
+                                            <span className="text-[9px] bg-purple-50 text-purple-700 px-1.5 py-0.5 rounded font-semibold border border-purple-200">
+                                              Experience-Based
+                                            </span>
+                                          </div>
+                                          <Select
+                                            options={asst2Options}
+                                            value={selectedAsst2}
+                                            onChange={(selected) => handleLabSelect(div.name, sub._id, selected ? selected.value : '', 1)}
+                                            placeholder="Select Assistant 2 (Ranked)..."
+                                            isSearchable={true}
+                                            isClearable={true}
+                                            className="text-xs"
+                                            menuPortalTarget={document.body}
+                                            styles={{ menuPortal: base => ({ ...base, zIndex: 9999 }) }}
+                                          />
+                                        </div>
                                       </div>
-                                      <div>
-                                        <label className="block text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-1">Lab Assistant Faculty</label>
-                                        <Select
-                                          options={getFacultyOptionsForSubject(div.name, sub._id, 'lab', 1)}
-                                          value={getFacultyOptionsForSubject(div.name, sub._id, 'lab', 1).find(opt => opt.value === facultyMapping[div.name]?.[sub._id]?.lab?.[1]) || null}
-                                          onChange={(selected) => handleLabSelect(div.name, sub._id, selected ? selected.value : '', 1)}
-                                          placeholder="Search Asst..."
-                                          isSearchable={true}
-                                          isClearable={true}
-                                          className="text-xs"
-                                          menuPortalTarget={document.body}
-                                          styles={{ menuPortal: base => ({ ...base, zIndex: 9999 }) }}
-                                        />
-                                      </div>
-                                    </div>
-                                  )}
+                                    );
+                                  })()}
                                 </div>
                               </div>
 
                               {/* Day + Time Dropdowns for Supported Semesters */}
-                              {isEntryModeSupported(config.semester, program) && 
-                               (entryMode === 'static' || (program !== 'PG' && isMathematicsOrChemistryForCSE(sub))) && (() => {
-                                const slotCount = Math.max(1, sub.credits || ((sub.lectureHours || 0) + (sub.tutorialHours || 0)) || 1);
+                              {isEntryModeSupported(config.semester, program) && (() => {
+                                const theorySlotCount = (sub.lectureHours || 0);
+                                const hasLabSlot = (sub.practicalHours || 0) > 0;
+                                const showTheorySlots = theorySlotCount > 0 && (entryMode === 'static' || (program !== 'PG' && isMathematicsOrChemistryForCSE(sub)));
+                                const showLabSlot = hasLabSlot;
+                                if (!showTheorySlots && !showLabSlot) return null;
+                                // Build valid 2-hour lab start times (must not cross breaks)
+                                const getLabTimeOptions = (semStart) => {
+                                  // Parse HH:MM to minutes
+                                  const toMin = (t) => { const [h, m] = t.split(':').map(Number); return h * 60 + m; };
+                                  const fromMin = (mins) => { const h = Math.floor(mins / 60); const m = mins % 60; return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`; };
+                                  // Break periods to avoid splitting
+                                  const shortBreakStart = toMin('10:00'), shortBreakEnd = toMin('10:30');
+                                  const lunchStart = semStart === '08:00' ? toMin('12:30') : toMin('13:30');
+                                  const lunchEnd = toMin('14:30');
+                                  const collegeEnd = toMin('16:30');
+                                  const startMin = toMin(semStart);
+                                  const labDuration = 120; // 2 hours
+                                  const validStarts = [];
+                                  // Step through each 30-min increment from college start to latest possible start
+                                  for (let s = startMin; s + labDuration <= collegeEnd; s += 30) {
+                                    const e = s + labDuration;
+                                    // Check if this 2-hour window crosses any break
+                                    const crossesShortBreak = s < shortBreakEnd && e > shortBreakStart;
+                                    const crossesLunch = s < lunchEnd && e > lunchStart;
+                                    if (!crossesShortBreak && !crossesLunch) {
+                                      validStarts.push(fromMin(s));
+                                    }
+                                  }
+                                  return validStarts;
+                                };
+                                const labTimeOptions = getLabTimeOptions(startTime);
+                                const addTwoHours = (t) => { const [h, m] = t.split(':').map(Number); const total = h * 60 + m + 120; return `${String(Math.floor(total / 60)).padStart(2,'0')}:${String(total % 60).padStart(2,'0')}`; };
+                                const labSlotIndex = theorySlotCount; // Lab slot stored after theory slots
+                                const totalSlots = (showTheorySlots ? theorySlotCount : 0) + (showLabSlot ? 1 : 0);
                                 return (
                                   <div className="mt-4 pt-3 border-t border-gray-200/80 bg-white/60 -mx-5 -mb-5 p-4 rounded-b-xl">
                                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 mb-2.5">
                                       <label className="text-[11px] font-extrabold text-indigo-900 uppercase tracking-wider flex items-center gap-1.5">
-                                        <FiClock className="text-indigo-600" /> Day & Time Slots ({slotCount} slot{slotCount > 1 ? 's' : ''} • {sub.credits || slotCount} Credit{slotCount > 1 ? 's' : ''})
+                                        <FiClock className="text-indigo-600" /> Day & Time Slots ({totalSlots} slot{totalSlots > 1 ? 's' : ''} • {sub.credits || totalSlots} Credit{totalSlots > 1 ? 's' : ''})
                                       </label>
                                       <span className="text-[10px] text-gray-500 font-medium">
-                                        {entryMode === 'static' ? '• Fixed timings for Static Entry' : '• Optional fixed timings for Dynamic Entry (Math/Chem)'}
+                                        {entryMode === 'static' ? '• Fixed timings for Static Entry' : '• Optional fixed timings for Dynamic Entry'}
                                       </span>
                                     </div>
                                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
-                                      {Array.from({ length: slotCount }).map((_, i) => (
-                                        <div key={i} className="bg-white p-2 rounded-lg border border-indigo-100 shadow-xs flex flex-col gap-1.5">
-                                          <span className="text-[10px] font-bold text-gray-600">Slot {i + 1}</span>
+                                      {/* Theory slots – one per lecture hour */}
+                                      {showTheorySlots && Array.from({ length: theorySlotCount }).map((_, i) => (
+                                        <div key={`theory-${i}`} className="bg-white p-2 rounded-lg border border-indigo-100 shadow-xs flex flex-col gap-1.5">
+                                          <span className="text-[10px] font-bold text-gray-600">
+                                            {hasLabSlot ? `Theory Slot ${i + 1}` : `Slot ${i + 1}`}
+                                          </span>
                                           <div className="flex gap-1.5">
                                             <select
                                               className="w-1/2 p-1.5 bg-gray-50 border border-gray-200 rounded text-xs font-medium outline-none focus:border-indigo-500 text-gray-800"
@@ -2580,6 +3110,45 @@ const GenerateTimetable = () => {
                                           </div>
                                         </div>
                                       ))}
+                                      {/* Lab slot – exactly one 2-hour continuous slot */}
+                                      {showLabSlot && (
+                                        <div className="bg-white p-2 rounded-lg border border-purple-200 shadow-xs flex flex-col gap-1.5">
+                                          <span className="text-[10px] font-bold text-purple-700 flex items-center gap-1">
+                                            Lab Slot
+                                            <span className="text-[9px] bg-purple-50 text-purple-600 px-1 rounded border border-purple-200 font-semibold">2 hrs</span>
+                                          </span>
+                                          <div className="flex gap-1.5">
+                                            <select
+                                              className="w-1/2 p-1.5 bg-gray-50 border border-purple-200 rounded text-xs font-medium outline-none focus:border-purple-500 text-gray-800"
+                                              value={fixedTimings[div.name]?.[sub._id]?.[labSlotIndex]?.day || ''}
+                                              onChange={e => handleFixedTimingChange(div.name, sub._id, labSlotIndex, 'day', e.target.value)}
+                                            >
+                                              <option value="">Day</option>
+                                              <option value="N/A">N/A</option>
+                                              <option value="Monday">Mon</option>
+                                              <option value="Tuesday">Tue</option>
+                                              <option value="Wednesday">Wed</option>
+                                              <option value="Thursday">Thu</option>
+                                              <option value="Friday">Fri</option>
+                                              <option value="Saturday">Sat</option>
+                                            </select>
+                                            <select
+                                              className="w-1/2 p-1.5 bg-gray-50 border border-purple-200 rounded text-xs font-medium outline-none focus:border-purple-500 text-gray-800"
+                                              value={fixedTimings[div.name]?.[sub._id]?.[labSlotIndex]?.time || ''}
+                                              onChange={e => handleFixedTimingChange(div.name, sub._id, labSlotIndex, 'time', e.target.value)}
+                                            >
+                                              <option value="">Time (2-hr slot)</option>
+                                              <option value="N/A">N/A</option>
+                                              {Array.from(new Set([
+                                                ...labTimeOptions,
+                                                ...(fixedTimings[div.name]?.[sub._id]?.[labSlotIndex]?.time ? [fixedTimings[div.name][sub._id][labSlotIndex].time] : [])
+                                              ])).sort().map(t => (
+                                                <option key={t} value={t}>{t} – {addTwoHours(t)}</option>
+                                              ))}
+                                            </select>
+                                          </div>
+                                        </div>
+                                      )}
                                     </div>
                                   </div>
                                 );
